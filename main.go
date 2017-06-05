@@ -9,23 +9,92 @@ import (
     "os"
     "io"
     "strings"
+    //"gopkg.in/dutchcoders/goftp.v1"
+    "os/exec"
+    //"log"
 )
 
 var config conf
 var ftpClient *ftp.ServerConn
 
 func main() {
-    var err error
-    ftpClient, err = connectToServer()
-    ftpClient.DisableEPSV = false
-    if err != nil {
-        fmt.Println(err)
-    }
+    //var err error
+    //ftpClient, err = connectToServer()
+    //ftpClient.DisableEPSV = false
+    //if err != nil {
+    //    fmt.Println(err)
+    //}
 
-    err = traverseFolder(config.RemotePath)
-    if err != nil {
-        fmt.Println(err)
+    //err = traverseFolder(config.RemotePath)
+    //if err != nil {
+    //    fmt.Println(err)
+    //}
+
+    config.loadFTPconfig()
+    listAllFiles("")
+}
+
+type SyncConfig struct {
+    Args     []string
+    From     string
+    To       string
+}
+
+func trimPath(input string) string {
+    pieces := strings.Split(input, "/")
+    last := pieces[len(pieces)-1]
+    result := input[:len(input)-len(last)]
+    return result
+}
+
+// List all files recursively in a directory. Files only, full paths on server.
+func listAllFiles(input string) []string {
+    input = "genomes/all/GCF/001/696/305"
+
+    // Call rsync and parse out list of files
+    source := "rsync://" + config.Server + "/" + input
+    cmd := "rsync -nr --list-only " + source + " | tail -n+18 | tr -s ' ' | grep -v '^d' | cut -d ' ' -f5"
+    out, _ := exec.Command("sh","-c", cmd).Output()
+
+    fileList := strings.Split(string(out[:]), "\n")
+    fileList = fileList[:len(fileList)-1]  // Remove last empty elem
+
+    // Append input path to beginning of each file path output
+    trimmed := trimPath(input)
+    var resultList []string
+    for _, value := range fileList {
+        resultList = append(resultList, trimmed + value)
     }
+    return resultList
+}
+
+func rsyncTest() {
+    c1 := exec.Command("rsync", "-nr", "--list-only", "rsync://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/696/305/GCF_001696305.1_UCN72.1/", "| head -n 5")
+
+    c2 := exec.Command("tail", "-n+18")
+    c3 := exec.Command("awk", "-d' '", "-f 3")
+
+    c2.Stdin, _ = c1.StdoutPipe()
+    c3.Stdin, _ = c2.StdoutPipe()
+    c3.Stdout = os.Stdout
+    _ = c3.Start()
+    _ = c2.Start()
+    _ = c1.Run()
+    _ = c3.Wait()
+    _ = c2.Wait()
+    stdoutStderr, _ := c3.CombinedOutput()
+
+    fmt.Printf("%s", stdoutStderr)
+}
+
+func callRsync(cfg SyncConfig) {
+    cfg.Args = append(cfg.Args, cfg.From, cfg.To)
+    cmd := exec.Command("rsync", "")
+
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    fmt.Println(cmd.Stdout)
+    fmt.Println(cmd.Stderr)
 }
 
 func connectToServer() (*ftp.ServerConn, error) {
@@ -97,6 +166,7 @@ func downloadFile(remotePath string) error {
     localPath := config.LocalPath[1:] + remotePath
     fmt.Println("LOCAL IS: " + localPath)
     fmt.Println("BLAH")
+    ftpClient.DisableEPSV = false
     reader, err := ftpClient.Retr(remotePath)
     if err != nil {
         fmt.Println(err)
