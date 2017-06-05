@@ -12,6 +12,8 @@ import (
     //"gopkg.in/dutchcoders/goftp.v1"
     "os/exec"
     //"log"
+    "path/filepath"
+    "time"
 )
 
 var config conf
@@ -31,7 +33,8 @@ func main() {
     //}
 
     config.loadFTPconfig()
-    listAllFiles("")
+    //listAllFiles("")
+    rsyncSimple("")
 }
 
 type SyncConfig struct {
@@ -47,14 +50,19 @@ func trimPath(input string) string {
     return result
 }
 
+func callCommand(input string) ([]byte, error) {
+    return exec.Command("sh","-c", input).Output()
+}
+
 // List all files recursively in a directory. Files only, full paths on server.
 func listAllFiles(input string) []string {
     input = "genomes/all/GCF/001/696/305"
 
     // Call rsync and parse out list of files
-    source := "rsync://" + config.Server + "/" + input
-    cmd := "rsync -nr --list-only " + source + " | tail -n+18 | tr -s ' ' | grep -v '^d' | cut -d ' ' -f5"
-    out, _ := exec.Command("sh","-c", cmd).Output()
+    source := fmt.Sprintf("rsync://%s/%s", config.Server, input)
+    fmt.Println(source)
+    cmd := fmt.Sprintf("rsync -nr --list-only %s | tail -n+18 | tr -s ' ' | grep -v '^d' | cut -d ' ' -f5", source)
+    out, _ := callCommand(cmd)
 
     fileList := strings.Split(string(out[:]), "\n")
     fileList = fileList[:len(fileList)-1]  // Remove last empty elem
@@ -68,49 +76,45 @@ func listAllFiles(input string) []string {
     return resultList
 }
 
-func rsyncTest() {
-    c1 := exec.Command("rsync", "-nr", "--list-only", "rsync://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/696/305/GCF_001696305.1_UCN72.1/", "| head -n 5")
+func rsyncSimple(input string) {
+    input = "blast/demo"
 
-    c2 := exec.Command("tail", "-n+18")
-    c3 := exec.Command("awk", "-d' '", "-f 3")
+    // Call rsync
+    source := fmt.Sprintf("rsync://%s/%s", config.Server, input)
+    changedDir := curTimeName()
+    template := "rsync -abrz --delete --exclude='.*' --backup-dir='%s' %s %s"
+    cmd := fmt.Sprintf(template, changedDir, source, config.LocalPath)
+    _, err := callCommand(cmd)
+    //fmt.Printf("%s %s", out, err)
 
-    c2.Stdin, _ = c1.StdoutPipe()
-    c3.Stdin, _ = c2.StdoutPipe()
-    c3.Stdout = os.Stdout
-    _ = c3.Start()
-    _ = c2.Start()
-    _ = c1.Run()
-    _ = c3.Wait()
-    _ = c2.Wait()
-    stdoutStderr, _ := c3.CombinedOutput()
+    // Handle changed files
+    dest := fmt.Sprintf("%s/%s", config.LocalPath, changedDir)
+    if _, err := os.Stat(dest); err == nil {
+        err = filepath.Walk(dest, visitFile)
+    }
+    fmt.Printf("filepath.Walk() returned %v\n", err)
 
-    fmt.Printf("%s", stdoutStderr)
+    // Delete temp folder after handling files
+    
 }
 
-func callRsync(cfg SyncConfig) {
-    cfg.Args = append(cfg.Args, cfg.From, cfg.To)
-    cmd := exec.Command("rsync", "")
-
-    cmd.Stdout = os.Stdout
-    cmd.Stderr = os.Stderr
-    fmt.Println(cmd.Stdout)
-    fmt.Println(cmd.Stderr)
+func curTimeName() string {
+    t := time.Now()
+    result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
+        t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
+    return result
 }
 
-func connectToServer() (*ftp.ServerConn, error) {
-    config.loadFTPconfig()
-    addr := config.Server + ":" + config.Port
-    client, err := ftp.Dial(addr)
-    if err != nil {
-        return nil, err
+// Handle each changed file
+func visitFile(path string, f os.FileInfo, err error) error {
+    if f.IsDir() || f.Name()[0] == '.' {
+        return nil
     }
+    fmt.Printf("Visited: %s\n", path)
+    return err
+}
 
-    err = client.Login(config.Username, config.Password)
-    if err != nil {
-        return nil, err
-    }
-
-    return client, nil
+func checksumChecks(input string) {
 }
 
 func traverseFolder(path string) error {
@@ -215,30 +219,4 @@ func (c *conf) loadFTPconfig() *conf {
     }
 
     return c
-}
-
-func viewDirectory() error {
-    fmt.Println("In viewDirectory")
-    client, err := ftp.Dial("ftp.ncbi.nlm.nih.gov:21")
-    if err != nil {
-        fmt.Println(err)
-        return err
-    }
-    if err := client.Login("anonymous", "test@test.com"); err != nil {
-        return err
-    }
-
-    fmt.Println("bob1")
-    reader, err := client.Retr("README.ftp")
-
-    buf := new(bytes.Buffer)
-    buf.ReadFrom(reader)
-    s := buf.String()
-    fmt.Println(s)
-    d1 := []byte("hello")
-    ioutil.WriteFile("./TEST", d1, 0644)
-
-
-    fmt.Println("END")
-    return err
 }
