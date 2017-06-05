@@ -69,22 +69,54 @@ func listNewFiles(input string) []string {
     return resultList
 }
 
+func parseChanges(cmd string) ([]string, []string, []string) {
+    out, _ := callCommand(cmd)
+    fmt.Printf("%s", out)
+    changeList := strings.Split(string(out[:]), "\n")
+    changeList = changeList[:len(changeList)-4]     // Remove last junk lines
+    fmt.Println(changeList)
+
+    var newL []string
+    var modifiedL []string
+    var deletedL []string
+
+    for _, line := range changeList {
+        result := strings.SplitN(line, " ", 2)
+        change := result[0]
+        file := result[1]
+        if strings.HasPrefix(change, ">f+++++++") {
+            newL = append(newL, file)
+        } else if strings.HasPrefix(change, ">f") {
+            modifiedL = append(modifiedL, file)
+        } else if strings.HasPrefix(line, "*deleting") &&
+            file[len(file)-1:] != "/" {
+            // Exclude deleted folders
+            deletedL = append(deletedL, file)
+        }
+    }
+    return newL, modifiedL, deletedL
+}
+
 func rsyncSimple(input string) {
     input = "/blast/demo"
+    var err error
+    var cmd string
 
-    // List only new files
-    listNewFiles(input)
-
-    // Call rsync in backup mode to copy modified and deleted files
+    // Construct Rsync parameters
     source := fmt.Sprintf("rsync://%s%s", config.Server, input)
     tempDir := curTimeName()
-    template := "rsync -abrzv --delete --no-motd --exclude='.*' --backup-dir='%s' %s %s"
-    cmd := fmt.Sprintf(template, tempDir, source, config.LocalPath)
-    fmt.Println(cmd)
-    out, err := callCommand(cmd)
+    template := "rsync -abrzv %s --itemize-changes --delete --no-motd --exclude='.*' --backup-dir='%s' %s %s | tail -n+2"
+
+    // Dry run
+    cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
+    newL, modifiedL, deletedL := parseChanges(cmd)
+
+    // Actual run
+    cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
+    out, _ := callCommand(cmd)
     fmt.Printf("%s", out)
 
-    // Handle new files
+    return
 
 
     // Handle replaced or deleted files
