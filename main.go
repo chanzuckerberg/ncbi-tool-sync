@@ -16,7 +16,7 @@ var config conf
 func main() {
     config.loadConfig()
     //listAllFiles("")
-    rsyncSimple("")
+    rsyncSimple(config.RemotePath)
 }
 
 type SyncConfig struct {
@@ -51,73 +51,60 @@ func listAllFiles(input string) []string {
     return resultList
 }
 
-func listNewFiles(input string) []string {
-    // Call rsync dry run and parse out list of new files
-    source := fmt.Sprintf("rsync://%s%s", config.Server, input)
-    cmd := fmt.Sprintf("rsync -anrv --ignore-existing --no-motd --exclude='.*' %s %s | tail -n+2 | grep -E -v '/$'", source, config.LocalPath + "/")
-    out, _ := callCommand(cmd)
-
-    fileList := strings.Split(string(out[:]), "\n")
-    fileList = fileList[:len(fileList)-4]       // Remove last junk lines
-
-    // Append input path to beginning of each file path output
-    trimmed := filepath.Dir(input)
-    var resultList []string
-    for _, value := range fileList {
-        resultList = append(resultList, trimmed + "/" + value)
-    }
-    return resultList
-}
-
-func parseChanges(cmd string) ([]string, []string, []string) {
+func parseChanges(cmd string, inputPath string) ([]string, []string, []string) {
     out, _ := callCommand(cmd)
     fmt.Printf("%s", out)
     changeList := strings.Split(string(out[:]), "\n")
     changeList = changeList[:len(changeList)-4]     // Remove last junk lines
-    fmt.Println(changeList)
 
     var newL []string
     var modifiedL []string
     var deletedL []string
+    trimmed := filepath.Dir(inputPath)
 
     for _, line := range changeList {
         result := strings.SplitN(line, " ", 2)
         change := result[0]
         file := result[1]
         if strings.HasPrefix(change, ">f+++++++") {
-            newL = append(newL, file)
+            newL = append(newL, trimmed + "/" + file)
         } else if strings.HasPrefix(change, ">f") {
-            modifiedL = append(modifiedL, file)
+            modifiedL = append(modifiedL, trimmed + "/" + file)
         } else if strings.HasPrefix(line, "*deleting") &&
             file[len(file)-1:] != "/" {
             // Exclude deleted folders
-            deletedL = append(deletedL, file)
+            deletedL = append(deletedL, trimmed + "/" + file)
         }
     }
     return newL, modifiedL, deletedL
 }
 
 func rsyncSimple(input string) {
-    input = "/blast/demo"
     var err error
     var cmd string
 
     // Construct Rsync parameters
-    source := fmt.Sprintf("rsync://%s%s", config.Server, input)
+    source := fmt.Sprintf("rsync://%s%s/", config.Server, input)
     tempDir := curTimeName()
     template := "rsync -abrzv %s --itemize-changes --delete --no-motd --exclude='.*' --backup-dir='%s' %s %s | tail -n+2"
 
     // Dry run
     cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
-    newL, modifiedL, deletedL := parseChanges(cmd)
+    newL, modifiedL, deletedL := parseChanges(cmd, input)
+    fmt.Printf("\nNEW: %s", newL)
+    fmt.Printf("\nMODIFIED: %s", modifiedL)
+    fmt.Printf("\nDELETED: %s", deletedL)
 
     // Actual run
-    cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
-    out, _ := callCommand(cmd)
-    fmt.Printf("%s", out)
+    //cmd = fmt.Sprintf(template, "", tempDir, source, config.LocalPath)
+    //out, _ := callCommand(cmd)
+    //fmt.Printf("%s", out)
 
+    // Handle changes
+    handleNewFiles(newL)
+    handleModifiedFiles(modifiedL)
+    handleDeletedFiles(deletedL)
     return
-
 
     // Handle replaced or deleted files
     dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
@@ -126,7 +113,18 @@ func rsyncSimple(input string) {
     }
     fmt.Printf("filepath.Walk() returned %v\n", err)
 
-    // Delete temp folder after handling files
+    // Delete temp folders after handling files
+}
+
+func handleNewFiles(newL []string) {
+
+}
+
+func handleModifiedFiles(modifiedL []string) {
+
+}
+
+func handleDeletedFiles(deletedL []string) {
 
 }
 
