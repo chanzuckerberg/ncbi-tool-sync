@@ -9,9 +9,12 @@ import (
     "os/exec"
     "path/filepath"
     "time"
+    "database/sql"
+    _ "github.com/mattn/go-sqlite3"
 )
 
 var config conf
+var db *sql.DB
 
 func main() {
     config.loadConfig()
@@ -51,35 +54,38 @@ func listAllFiles(input string) []string {
     return resultList
 }
 
-func parseChanges(cmd string, inputPath string) ([]string, []string, []string) {
-    out, _ := callCommand(cmd)
-    fmt.Printf("%s", out)
-    changeList := strings.Split(string(out[:]), "\n")
-    changeList = changeList[:len(changeList)-4]     // Remove last junk lines
+func parseChanges(cmd string, inputPath string) ([][]string, error) {
+    fmt.Println(cmd)
+    out, err := callCommand(cmd)
+    if err != nil {
+        return nil, err
+    }
+    changes := strings.Split(string(out[:]), "\n")
+    changes = changes[:len(changes)-4]      // Remove last junk lines
 
-    var newL []string
-    var modifiedL []string
-    var deletedL []string
-    trimmed := filepath.Dir(inputPath)
+    var new, modified, deleted []string
+    base := inputPath
 
-    for _, line := range changeList {
-        result := strings.SplitN(line, " ", 2)
-        change := result[0]
-        file := result[1]
+    for _, line := range changes {
+        col := strings.SplitN(line, " ", 2)
+        change := col[0]
+        file := col[1]
         if strings.HasPrefix(change, ">f+++++++") {
-            newL = append(newL, trimmed + "/" + file)
+            new = append(new, base + "/" + file)
         } else if strings.HasPrefix(change, ">f") {
-            modifiedL = append(modifiedL, trimmed + "/" + file)
+            modified = append(modified, base + "/" + file)
         } else if strings.HasPrefix(line, "*deleting") &&
             file[len(file)-1:] != "/" {
             // Exclude deleted folders
-            deletedL = append(deletedL, trimmed + "/" + file)
+            deleted = append(deleted, base + "/" + file)
         }
     }
-    return newL, modifiedL, deletedL
+    var results [][]string
+    results = append(results, new, modified, deleted)
+    return results, err
 }
 
-func rsyncSimple(input string) {
+func rsyncSimple(input string) error {
     var err error
     var cmd string
 
@@ -90,21 +96,37 @@ func rsyncSimple(input string) {
 
     // Dry run
     cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
-    newL, modifiedL, deletedL := parseChanges(cmd, input)
-    fmt.Printf("\nNEW: %s", newL)
-    fmt.Printf("\nMODIFIED: %s", modifiedL)
-    fmt.Printf("\nDELETED: %s", deletedL)
+    results, err := parseChanges(cmd, input)
+    if err != nil {
+        return err
+    }
+    new := results[0]
+    modified := results[1]
+    deleted := results[2]
+
+    fmt.Printf("\nNEW: %s", new)
+    fmt.Printf("\nMODIFIED: %s", modified)
+    fmt.Printf("\nDELETED: %s", deleted)
 
     // Actual run
-    //cmd = fmt.Sprintf(template, "", tempDir, source, config.LocalPath)
-    //out, _ := callCommand(cmd)
-    //fmt.Printf("%s", out)
+    cmd = fmt.Sprintf(template, "", tempDir, source, config.LocalPath)
+    out, err := callCommand(cmd)
+    if err != nil {
+        return err
+    }
+    fmt.Printf("\n%s%s\n", out, err)
 
     // Handle changes
-    handleNewFiles(newL)
-    handleModifiedFiles(modifiedL)
-    handleDeletedFiles(deletedL)
-    return
+    db, err = sql.Open("sqlite3", "./versionDB.db")
+    defer db.Close()
+    if err != nil {
+        return err
+    }
+
+    handleNewFiles(new)
+    return nil
+    handleModifiedFiles(modified)
+    handleDeletedFiles(deleted)
 
     // Handle replaced or deleted files
     dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
@@ -114,24 +136,85 @@ func rsyncSimple(input string) {
     fmt.Printf("filepath.Walk() returned %v\n", err)
 
     // Delete temp folders after handling files
+    return nil
 }
 
-func handleNewFiles(newL []string) {
+func handleNewFiles(new []string) {
+    handleNewVersions(new)
+}
+
+func handleModifiedFiles(modified []string) {
 
 }
 
-func handleModifiedFiles(modifiedL []string) {
+func handleDeletedFiles(deleted []string) {
 
 }
 
-func handleDeletedFiles(deletedL []string) {
+// Handle a list of files with new versions
+func handleNewVersions(files []string) error {
+    for _, file := range files {
+        handleNewVersion(file)
+    }
+    return nil
+}
 
+// Handle one file with a new version on disk
+func handleNewVersion(file string) error {
+    // Set version number
+    var versionNum int = 1
+    lastNum, err := findLastVersionNum(db, file)
+    if err != nil {
+        return err
+    }
+    if lastNum > -1 {       // Some version already exists
+        versionNum = lastNum + 1
+    }
+
+    // Set datetime modified
+    localPath := fmt.Sprintf("%s%s", config.LocalTop, file)
+    fmt.Println(localPath)
+    info, err := os.Stat(localPath)
+    if err != nil {
+        return err
+    }
+    modTime := fmt.Sprintf("%s", info.ModTime())
+    fmt.Println("Last modified time : ", modTime)
+
+    // Insert into database
+    query := fmt.Sprintf("insert into entries(PathName, VersionNum, DateModified) values('%s', %d, '%s')", file, versionNum, modTime)
+    _, err = db.Exec(query)
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+
+func findLastVersionNum(db *sql.DB, file string) (int, error) {
+    query := fmt.Sprintf("select VersionNum from entries where PathName='%s' order by VersionNum desc", file)
+    rows, err := db.Query(query)
+    defer rows.Close()
+    if err != nil {
+        return -1, err
+    }
+
+    for rows.Next() {
+        var VersionNum int
+        err = rows.Scan(&VersionNum)
+        if err != nil {
+            return -1, err
+        }
+        return VersionNum, nil
+    }
+    return -1, nil
 }
 
 func curTimeName() string {
     t := time.Now()
     result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
         t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
+    fmt.Println(result)
     return result
 }
 
@@ -151,6 +234,7 @@ type conf struct {
     Password   string `yaml:"Password"`
     RemotePath string `yaml:"RemotePath"`
     LocalPath  string `yaml:"LocalPath"`
+    LocalTop   string `yaml:"LocalTop"`
 }
 
 func (c *conf) loadConfig() *conf {
