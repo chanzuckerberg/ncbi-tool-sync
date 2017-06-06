@@ -11,10 +11,13 @@ import (
     "time"
     "database/sql"
     _ "github.com/mattn/go-sqlite3"
+    "crypto/md5"
+    "io"
 )
 
 var config conf
 var db *sql.DB
+var tempDir string
 
 func main() {
     config.loadConfig()
@@ -123,28 +126,34 @@ func rsyncSimple(input string) error {
         return err
     }
 
-    handleNewFiles(new)
-    return nil
-    handleModifiedFiles(modified)
-    handleDeletedFiles(deleted)
+    handleNewVersions(new)
+    handleNewVersions(modified)
+    //handleDeletedFiles(deleted)
 
-    // Handle replaced or deleted files
-    dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
-    if _, err := os.Stat(dest); err == nil {
-        err = filepath.Walk(dest, visitFile)
-    }
-    fmt.Printf("filepath.Walk() returned %v\n", err)
+    // Move replaced or deleted file versions to archive
+    archiveOldVersions(tempDir)
 
     // Delete temp folders after handling files
     return nil
 }
 
-func handleNewFiles(new []string) {
-    handleNewVersions(new)
-}
+func archiveOldVersions(tempDir string) error {
+    var err error
+    dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
+    fmt.Println(dest)
 
-func handleModifiedFiles(modified []string) {
+    if _, err := os.Stat(dest); err == nil {
+        fmt.Println("Pop")
+        err = filepath.Walk(dest, archiveFile(tempDir))
+    }
 
+    fmt.Println("BOB")
+    if err != nil {
+        fmt.Println("HI")
+        return err
+    }
+    fmt.Printf("filepath.Walk() returned %v\n", err)
+    return err
 }
 
 func handleDeletedFiles(deleted []string) {
@@ -210,6 +219,25 @@ func findLastVersionNum(db *sql.DB, file string) (int, error) {
     return -1, nil
 }
 
+func lastUnarchivedEntry(db *sql.DB, file string) (int, error) {
+    query := fmt.Sprintf("select VersionNum from entries where PathName='%s' and ArchiveKey is null order by VersionNum desc", file)
+    rows, err := db.Query(query)
+    defer rows.Close()
+    if err != nil {
+        return -1, err
+    }
+
+    for rows.Next() {
+        var VersionNum int
+        err = rows.Scan(&VersionNum)
+        if err != nil {
+            return -1, err
+        }
+        return VersionNum, nil
+    }
+    return -1, nil
+}
+
 func curTimeName() string {
     t := time.Now()
     result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
@@ -219,12 +247,44 @@ func curTimeName() string {
 }
 
 // Handle each changed file
-func visitFile(path string, f os.FileInfo, err error) error {
-    if f.IsDir() || f.Name()[0] == '.' {
-        return nil
+func archiveFile(tempDir string) filepath.WalkFunc {
+    return func(path string, f os.FileInfo, err error) error {
+        if f.IsDir() {
+            return nil
+        }
+        fmt.Println(path)
+        fmt.Println("YOIYI")
+        fmt.Println("TEMP DIR IS: " + tempDir)
+        fmt.Printf("Visited: %s\n", path)
+
+        // Generate archiveKey blob
+        pathName := path[len(config.LocalTop)-2:]
+        pathName = strings.Replace(pathName, tempDir + "/", "", 1)
+        versionNum, _ := lastUnarchivedEntry(db, pathName)
+        archiveKey := fmt.Sprintf("%s -- Version %d", pathName, versionNum)
+        fmt.Println("GOING TO HASH: " + archiveKey)
+        h := md5.New()
+        io.WriteString(h, archiveKey)
+        result := h.Sum(nil)
+        archiveKey = fmt.Sprintf("%x", result)
+
+        // Move to archive folder
+        dest := fmt.Sprintf("%s/archive/%s", config.LocalTop[2:], archiveKey)
+        fmt.Println("DEST: " + dest)
+        err = os.Rename(path, dest)
+        fmt.Println(err)
+
+        // Update the old entry with archiveKey blob
+        query := fmt.Sprintf("update entries set ArchiveKey='%s' where PathName='%s' and VersionNum=%d;", archiveKey, pathName, versionNum)
+        fmt.Println("QUERY: " + query)
+        _, err = db.Exec(query)
+        if err != nil {
+            fmt.Println("ERROR: ")
+            fmt.Println(err)
+        }
+
+        return err
     }
-    fmt.Printf("Visited: %s\n", path)
-    return err
 }
 
 type conf struct {
