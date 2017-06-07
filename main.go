@@ -23,6 +23,7 @@ func main() {
     err := callRsyncFlow(config.RemotePath)
     if err != nil {
         fmt.Println(err)
+        panic("ERROR")
     }
 }
 
@@ -42,12 +43,13 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
         change := col[0]
         file := col[1]
         path := base + "/" + file
+        last := file[len(file)-1:]
         if strings.HasPrefix(change, ">f+++++++") {
             new = append(new, path)
         } else if strings.HasPrefix(change, ">f") {
             modified = append(modified, path)
-        } else if strings.HasPrefix(change, "*deleting") &&
-            file[len(file)-1:] != "/" {             // Exclude folders
+        } else if strings.HasPrefix(change, "*deleting") && last != "/" {
+            // Exclude folders
             deleted = append(deleted, path)
         }
     }
@@ -61,7 +63,8 @@ func callRsyncFlow(input string) error {
     // Construct Rsync parameters
     source := fmt.Sprintf("rsync://%s%s/", config.Server, input)
     tempDir := curTimeName()
-    template := "rsync -abrzv %s --itemize-changes --delete --no-motd --exclude='.*' --backup-dir='%s' %s %s | tail -n+2"
+    template := "rsync -abrzv %s --itemize-changes --delete --no-motd " +
+        "--exclude='.*' --backup-dir='%s' %s %s | tail -n+2"
 
     // Dry run
     cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
@@ -73,6 +76,7 @@ func callRsyncFlow(input string) error {
     fmt.Printf("\nDELETED: %s", deleted)
 
     // Actual run
+    os.MkdirAll(config.LocalPath, os.ModePerm)
     cmd = fmt.Sprintf(template, "", tempDir, source, config.LocalPath)
     out, err = callCommand(cmd)
     if err != nil { return err }
@@ -85,7 +89,8 @@ func callRsyncFlow(input string) error {
 
 func processChanges(new []string, modified []string, tempDir string) error {
     // Open db
-    db, err := sql.Open("sqlite3", "./versionDB.db")
+    var err error
+    db, err = sql.Open("sqlite3", "./versionDB.db")
     defer db.Close()
     if err != nil { return err }
 
@@ -109,6 +114,7 @@ func processChanges(new []string, modified []string, tempDir string) error {
 func archiveOldVersions(tempDir string) error {
     var err error
     dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
+    os.MkdirAll(config.LocalTop + "/archive", os.ModePerm)
 
     // Walk through each modified file
     if _, err := os.Stat(dest); err == nil {
@@ -131,7 +137,7 @@ func handleNewVersions(files []string) error {
 func handleNewVersion(file string) error {
     // Set version number
     var versionNum int = 1
-    prevNum := findPrevVersionNum(db, file, true)
+    prevNum := findPrevVersionNum(file, true)
     if prevNum > -1 { // Some version already exists
         versionNum = prevNum + 1
     }
@@ -143,21 +149,23 @@ func handleNewVersion(file string) error {
     modTime := fmt.Sprintf("%s", info.ModTime())
 
     // Insert into database
-    query := fmt.Sprintf("insert into entries(PathName, VersionNum, DateModified) values('%s', %d, '%s')", file, versionNum, modTime)
+    query := fmt.Sprintf("insert into entries(PathName, VersionNum, " +
+        "DateModified) values('%s', %d, '%s')", file, versionNum, modTime)
     _, err = db.Exec(query)
 
     return err
 }
 
 // Find the latest version number of the file
-func findPrevVersionNum(db *sql.DB, file string, includeArchived bool) int {
+func findPrevVersionNum(file string, includeArchived bool) int {
     var num int = -1
     var archive string = ""
     if !includeArchived {      // Specify not archived entries
         archive = "and ArchiveKey is null "
     }
 
-    query := fmt.Sprintf("select VersionNum from entries where PathName='%s' %sorder by VersionNum desc", file, archive)
+    query := fmt.Sprintf("select VersionNum from entries where " +
+        "PathName='%s' %sorder by VersionNum desc", file, archive)
     rows, err := db.Query(query)
     defer rows.Close()
     if err != nil {
@@ -168,7 +176,6 @@ func findPrevVersionNum(db *sql.DB, file string, includeArchived bool) int {
     err = rows.Scan(&num)
     return num
 }
-
 
 // Generate a folder name from the current datetime
 func curTimeName() string {
@@ -186,7 +193,7 @@ func archiveFile(tempDir string) filepath.WalkFunc {
         // Generate archiveKey blob
         path := input[len(config.LocalTop)-2:]     // Remove first part of path
         path = strings.Replace(path, tempDir + "/", "", 1)
-        num := findPrevVersionNum(db, path, false)
+        num := findPrevVersionNum(path, false)
 
         key := fmt.Sprintf("%s -- Version %d", path, num)
         hash := md5.New()
@@ -198,7 +205,8 @@ func archiveFile(tempDir string) filepath.WalkFunc {
         err = os.Rename(input, dest)
 
         // Update the old entry with archiveKey blob
-        query := fmt.Sprintf("update entries set ArchiveKey='%s' where PathName='%s' and VersionNum=%d;", key, path, num)
+        query := fmt.Sprintf("update entries set ArchiveKey='%s' " +
+            "where PathName='%s' and VersionNum=%d;", key, path, num)
         _, err = db.Exec(query)
 
         return err
