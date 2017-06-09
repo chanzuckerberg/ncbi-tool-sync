@@ -12,6 +12,7 @@ import (
     "github.com/aws/aws-sdk-go/aws/awsutil"
     "github.com/aws/aws-sdk-go/aws/endpoints"
     "github.com/aws/aws-sdk-go/service/s3"
+    "os/exec"
 )
 
 type Context struct {
@@ -31,6 +32,27 @@ func (c *Context) LoadConfig() *Context {
     fmt.Println(c.Bucket)
 
     return c
+}
+
+// Mount the s3fs-fuse directory
+func (c *Context) MountFuse() error {
+    _ = os.Mkdir("remote", os.ModePerm)
+    cmd := fmt.Sprintf("s3fs %s remote", c.Bucket)
+    out, err := callCommand(cmd)
+    fmt.Println("%s%s", out, err)
+    return err
+}
+
+// Unmount the s3fs-fuse directory
+func (c *Context) UmountFuse() error {
+    cmd := fmt.Sprintf("umount remote")
+    out, err := callCommand(cmd)
+    fmt.Println("%s%s", out, err)
+    return err
+}
+
+func callCommand(input string) ([]byte, error) {
+    return exec.Command("sh","-c", input).Output()
 }
 
 // Puts a file from a local path to a remote path on S3

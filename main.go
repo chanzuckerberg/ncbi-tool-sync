@@ -18,13 +18,13 @@ import (
 )
 
 type Context struct {
-    db *sql.DB
+    db         *sql.DB
     storHelper storage.Context
     Server     string `yaml:"Server"`
     Port       string `yaml:"Port"`
     Username   string `yaml:"Username"`
     Password   string `yaml:"Password"`
-    RemotePath string `yaml:"RemotePath"`
+    SourcePath string `yaml:"SourcePath"`
     LocalPath  string `yaml:"LocalPath"`
     LocalTop   string `yaml:"LocalTop"`
     Bucket     string `yaml:"Bucket"`
@@ -32,9 +32,11 @@ type Context struct {
 
 func main() {
     var c Context
+    var err error
     c.loadConfig()
-    err := c.callRsyncFlow(c.RemotePath)
-    //storHelper.LoadConfig()
+    c.storHelper.LoadConfig()
+    err = c.storHelper.MountFuse()
+    err = c.callRsyncFlow(c.SourcePath)
     //err := awsTest()
     if err != nil {
         fmt.Println(err)
@@ -89,6 +91,7 @@ func (c *Context) callRsyncFlow(input string) error {
     fmt.Printf("\nNEW: %s", new)
     fmt.Printf("\nMODIFIED: %s", modified)
     fmt.Printf("\nDELETED: %s", deleted)
+    return err
 
     // Actual run
     os.MkdirAll(c.LocalPath, os.ModePerm)
