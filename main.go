@@ -14,14 +14,28 @@ import (
     "crypto/md5"
     "io"
     "encoding/hex"
+    "ncbi_proj/storage"
 )
 
-var config conf
-var db *sql.DB
+type Context struct {
+    db *sql.DB
+    storHelper storage.Context
+    Server     string `yaml:"Server"`
+    Port       string `yaml:"Port"`
+    Username   string `yaml:"Username"`
+    Password   string `yaml:"Password"`
+    RemotePath string `yaml:"RemotePath"`
+    LocalPath  string `yaml:"LocalPath"`
+    LocalTop   string `yaml:"LocalTop"`
+    Bucket     string `yaml:"Bucket"`
+}
 
 func main() {
-    config.loadConfig()
-    err := callRsyncFlow(config.RemotePath)
+    var c Context
+    c.loadConfig()
+    err := c.callRsyncFlow(c.RemotePath)
+    //storHelper.LoadConfig()
+    //err := awsTest()
     if err != nil {
         fmt.Println(err)
     }
@@ -56,18 +70,18 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
     return new, modified, deleted
 }
 
-func callRsyncFlow(input string) error {
+func (c *Context) callRsyncFlow(input string) error {
     var err error
     var cmd string
 
     // Construct Rsync parameters
-    source := fmt.Sprintf("rsync://%s%s/", config.Server, input)
+    source := fmt.Sprintf("rsync://%s%s/", c.Server, input)
     tempDir := curTimeName()
     template := "rsync -abrzv %s --itemize-changes --delete --no-motd " +
         "--exclude='.*' --backup-dir='%s' %s %s | tail -n+2"
 
     // Dry run
-    cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
+    cmd = fmt.Sprintf(template, "-n", tempDir, source, c.LocalPath)
     fmt.Println(cmd)
     out, err := callCommand(cmd)
     if err != nil { return err }
@@ -77,80 +91,80 @@ func callRsyncFlow(input string) error {
     fmt.Printf("\nDELETED: %s", deleted)
 
     // Actual run
-    os.MkdirAll(config.LocalPath, os.ModePerm)
-    cmd = fmt.Sprintf(template, "", tempDir, source, config.LocalPath)
+    os.MkdirAll(c.LocalPath, os.ModePerm)
+    cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
     out, err = callCommand(cmd)
     if err != nil { return err }
     fmt.Printf("\n%s%s\n", out, err)
 
     // Process changes
-    err = processChanges(new, modified, tempDir)
+    err = c.processChanges(new, modified, tempDir)
     return err
 }
 
-func processChanges(new []string, modified []string, tempDir string) error {
+func (c *Context) processChanges(new []string, modified []string, tempDir string) error {
     // Open db
     var err error
-    db, err = sql.Open("sqlite3", "./versionDB.db")
-    defer db.Close()
+    c.db, err = sql.Open("sqlite3", "./versionDB.db")
+    defer c.db.Close()
     if err != nil { return err }
 
     // Move replaced or deleted file versions to archive
-    err = archiveOldVersions(tempDir)
+    err = c.archiveOldVersions(tempDir)
     if err != nil { return err }
 
     // Add new or modified files as db entries
-    err = handleNewVersions(new)
+    err = c.handleNewVersions(new)
     if err != nil { return err }
-    err = handleNewVersions(modified)
+    err = c.handleNewVersions(modified)
     if err != nil { return err }
 
     // Delete temp folder after handling files
-    path := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
+    path := fmt.Sprintf("%s/%s", c.LocalPath, tempDir)
     err = os.RemoveAll(path)
 
     return err
 }
 
-func archiveOldVersions(tempDir string) error {
+func (c *Context) archiveOldVersions(tempDir string) error {
     var err error
 
     // Return if rsync didn't make a modified folder
-    _, err = os.Stat(fmt.Sprintf("%s/%s", config.LocalPath, tempDir))
+    _, err = os.Stat(fmt.Sprintf("%s/%s", c.LocalPath, tempDir))
     if err != nil { return nil }
 
     // Make archive folder
-    dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
-    os.MkdirAll(config.LocalTop + "/archive", os.ModePerm)
+    dest := fmt.Sprintf("%s/%s", c.LocalPath, tempDir)
+    os.MkdirAll(c.LocalTop + "/archive", os.ModePerm)
 
     // Walk through each modified file
     if _, err := os.Stat(dest); err == nil {
-        err = filepath.Walk(dest, archiveFile(tempDir))
+        err = filepath.Walk(dest, c.archiveFile(tempDir))
     }
 
     return err
 }
 
 // Handle a list of files with new versions
-func handleNewVersions(files []string) error {
+func (c *Context) handleNewVersions(files []string) error {
     for _, file := range files {
-        err := handleNewVersion(file)
+        err := c.handleNewVersion(file)
         if err != nil { return err }
     }
     return nil
 }
 
 // Handle one file with a new version on disk
-func handleNewVersion(file string) error {
+func (c *Context) handleNewVersion(file string) error {
     // Set version number
     var versionNum int = 1
-    prevNum := findPrevVersionNum(file, true)
+    prevNum := c.findPrevVersionNum(file, true)
     if prevNum > -1 { // Some version already exists
         versionNum = prevNum + 1
     }
 
     // Set datetime modified
-    path := fmt.Sprintf("%s%s", config.LocalTop, file)
+    path := fmt.Sprintf("%s%s", c.LocalTop, file)
     info, err := os.Stat(path)
     if err != nil { return err }
     modTime := fmt.Sprintf("%s", info.ModTime())
@@ -158,13 +172,13 @@ func handleNewVersion(file string) error {
     // Insert into database
     query := fmt.Sprintf("insert into entries(PathName, VersionNum, " +
         "DateModified) values('%s', %d, '%s')", file, versionNum, modTime)
-    _, err = db.Exec(query)
+    _, err = c.db.Exec(query)
 
     return err
 }
 
 // Find the latest version number of the file
-func findPrevVersionNum(file string, includeArchived bool) int {
+func (c *Context) findPrevVersionNum(file string, includeArchived bool) int {
     var num int = -1
     var archive string = ""
     if !includeArchived {      // Specify not archived entries
@@ -173,7 +187,7 @@ func findPrevVersionNum(file string, includeArchived bool) int {
 
     query := fmt.Sprintf("select VersionNum from entries where " +
         "PathName='%s' %sorder by VersionNum desc", file, archive)
-    rows, err := db.Query(query)
+    rows, err := c.db.Query(query)
     defer rows.Close()
     if err != nil {
         return num
@@ -193,25 +207,25 @@ func curTimeName() string {
 }
 
 // Handle each changed file
-func archiveFile(tempDir string) filepath.WalkFunc {
+func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
     return func(origPath string, f os.FileInfo, err error) error {
         if f.IsDir() { return nil }
 
         // Setup
-        newPath := origPath[len(config.LocalTop)-2:]             // Remove first part of newPath
+        newPath := origPath[len(c.LocalTop)-2:]             // Remove first part of newPath
         newPath = strings.Replace(newPath, tempDir + "/", "", 1) // Remove tempDir
-        num := findPrevVersionNum(newPath, false)
+        num := c.findPrevVersionNum(newPath, false)
         key, err := generateHash(origPath, newPath, num)
         if err != nil { return err }
 
         // Move to archive folder
-        dest := fmt.Sprintf("%s/archive/%s", config.LocalTop[2:], key)
+        dest := fmt.Sprintf("%s/archive/%s", c.LocalTop[2:], key)
         err = os.Rename(origPath, dest)
 
         // Update the old entry with archiveKey blob
         query := fmt.Sprintf("update entries set ArchiveKey='%s' " +
             "where PathName='%s' and VersionNum=%d;", key, newPath, num)
-        _, err = db.Exec(query)
+        _, err = c.db.Exec(query)
 
         return err
     }
@@ -241,18 +255,8 @@ func generateHash(origPath string, path string, num int) (string, error) {
     return result, nil
 }
 
-type conf struct {
-    Server     string `yaml:"Server"`
-    Port       string `yaml:"Port"`
-    Username   string `yaml:"Username"`
-    Password   string `yaml:"Password"`
-    RemotePath string `yaml:"RemotePath"`
-    LocalPath  string `yaml:"LocalPath"`
-    LocalTop   string `yaml:"LocalTop"`
-}
-
 // Load the configuration file
-func (c *conf) loadConfig() *conf {
+func (c *Context) loadConfig() *Context {
     file, err := ioutil.ReadFile("config.yaml")
     if err != nil { panic(err) }
 
@@ -260,4 +264,10 @@ func (c *conf) loadConfig() *conf {
     if err != nil { panic(err) }
 
     return c
+}
+
+func (c *Context) awsTest() error {
+    err := c.storHelper.PutFile("storage/blast/demo/splitd.ppt",
+        "storage/blast/demo/ieee_talk.pdf")
+    return err
 }
