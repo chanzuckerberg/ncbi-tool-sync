@@ -13,6 +13,7 @@ import (
     _ "github.com/mattn/go-sqlite3"
     "crypto/md5"
     "io"
+    "encoding/hex"
 )
 
 var config conf
@@ -23,7 +24,6 @@ func main() {
     err := callRsyncFlow(config.RemotePath)
     if err != nil {
         fmt.Println(err)
-        panic("ERROR")
     }
 }
 
@@ -68,6 +68,7 @@ func callRsyncFlow(input string) error {
 
     // Dry run
     cmd = fmt.Sprintf(template, "-n", tempDir, source, config.LocalPath)
+    fmt.Println(cmd)
     out, err := callCommand(cmd)
     if err != nil { return err }
     new, modified, deleted := parseChanges(out, input)
@@ -94,14 +95,14 @@ func processChanges(new []string, modified []string, tempDir string) error {
     defer db.Close()
     if err != nil { return err }
 
+    // Move replaced or deleted file versions to archive
+    err = archiveOldVersions(tempDir)
+    if err != nil { return err }
+
     // Add new or modified files as db entries
     err = handleNewVersions(new)
     if err != nil { return err }
     err = handleNewVersions(modified)
-    if err != nil { return err }
-
-    // Move replaced or deleted file versions to archive
-    err = archiveOldVersions(tempDir)
     if err != nil { return err }
 
     // Delete temp folder after handling files
@@ -113,6 +114,12 @@ func processChanges(new []string, modified []string, tempDir string) error {
 
 func archiveOldVersions(tempDir string) error {
     var err error
+
+    // Return if rsync didn't make a modified folder
+    _, err = os.Stat(fmt.Sprintf("%s/%s", config.LocalPath, tempDir))
+    if err != nil { return nil }
+
+    // Make archive folder
     dest := fmt.Sprintf("%s/%s", config.LocalPath, tempDir)
     os.MkdirAll(config.LocalTop + "/archive", os.ModePerm)
 
@@ -187,30 +194,51 @@ func curTimeName() string {
 
 // Handle each changed file
 func archiveFile(tempDir string) filepath.WalkFunc {
-    return func(input string, f os.FileInfo, err error) error {
+    return func(origPath string, f os.FileInfo, err error) error {
         if f.IsDir() { return nil }
 
-        // Generate archiveKey blob
-        path := input[len(config.LocalTop)-2:]     // Remove first part of path
-        path = strings.Replace(path, tempDir + "/", "", 1)
-        num := findPrevVersionNum(path, false)
-
-        key := fmt.Sprintf("%s -- Version %d", path, num)
-        hash := md5.New()
-        io.WriteString(hash, key)
-        key = fmt.Sprintf("%x", hash.Sum(nil))
+        // Setup
+        newPath := origPath[len(config.LocalTop)-2:]             // Remove first part of newPath
+        newPath = strings.Replace(newPath, tempDir + "/", "", 1) // Remove tempDir
+        num := findPrevVersionNum(newPath, false)
+        key, err := generateHash(origPath, newPath, num)
+        if err != nil { return err }
 
         // Move to archive folder
         dest := fmt.Sprintf("%s/archive/%s", config.LocalTop[2:], key)
-        err = os.Rename(input, dest)
+        err = os.Rename(origPath, dest)
 
         // Update the old entry with archiveKey blob
         query := fmt.Sprintf("update entries set ArchiveKey='%s' " +
-            "where PathName='%s' and VersionNum=%d;", key, path, num)
+            "where PathName='%s' and VersionNum=%d;", key, newPath, num)
         _, err = db.Exec(query)
 
         return err
     }
+}
+
+// Hash for archiveKey
+func generateHash(origPath string, path string, num int) (string, error) {
+    // Add a header
+    key := fmt.Sprintf("%s -- Version %d -- ", path, num)
+    hash := md5.New()
+    io.WriteString(hash, key)
+
+    // Add the file contents
+    var result string
+    file, err := os.Open(origPath)
+    if err != nil {
+        return result, err
+    }
+    defer file.Close()
+    if _, err := io.Copy(hash, file); err != nil {
+        return result, err
+    }
+
+    // Generate checksum
+    hashInBytes := hash.Sum(nil)[:16]
+    result = hex.EncodeToString(hashInBytes)
+    return result, nil
 }
 
 type conf struct {
