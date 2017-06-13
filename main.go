@@ -50,7 +50,7 @@ func callCommand(input string) ([]byte, error) {
 // Parse the Rsync itemized output for new, modified, and deleted files
 func parseChanges(out []byte, base string) ([]string, []string, []string) {
     changes := strings.Split(string(out[:]), "\n")
-    changes = changes[:len(changes)-4]      // Remove last junk lines
+    changes = changes[2:len(changes)-4]      // Remove junk lines
 
     var new, modified, deleted []string
 
@@ -79,28 +79,32 @@ func (c *Context) callRsyncFlow(input string) error {
     // Construct Rsync parameters
     source := fmt.Sprintf("rsync://%s%s/", c.Server, input)
     tempDir := curTimeName()
-    template := "rsync -abrzv %s --itemize-changes --delete --no-motd " +
-        "--exclude='.*' --backup-dir='%s' %s %s | tail -n+2"
+    template := "rsync -abrzv %s --itemize-changes --delete --size-only --no-motd " +
+        "--exclude='.*' --backup-dir='%s' %s %s"
 
     // Dry run
     cmd = fmt.Sprintf(template, "-n", tempDir, source, c.LocalPath)
     fmt.Println(cmd)
     out, err := callCommand(cmd)
-    if err != nil { return err }
+    if err != nil {
+        fmt.Printf("%s, %s", out, err)
+        return err
+    }
     new, modified, deleted := parseChanges(out, input)
     fmt.Printf("\nNEW: %s", new)
     fmt.Printf("\nMODIFIED: %s", modified)
     fmt.Printf("\nDELETED: %s", deleted)
-    return err
 
     // Actual run
+    fmt.Println("\nGOING TO START REAL RUN")
     os.MkdirAll(c.LocalPath, os.ModePerm)
     cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
     out, err = callCommand(cmd)
-    if err != nil { return err }
     fmt.Printf("\n%s%s\n", out, err)
+    if err != nil { return err }
 
     // Process changes
+    fmt.Println("\nGOING TO PROCESS CHANGES")
     err = c.processChanges(new, modified, tempDir)
     return err
 }
