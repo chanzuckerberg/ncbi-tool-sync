@@ -34,20 +34,20 @@ func (c *Context) LoadConfig() *Context {
     return c
 }
 
-// Mount the s3fs-fuse directory
+// Mount the virtual directory
 func (c *Context) MountFuse() error {
     _ = os.Mkdir("remote", os.ModePerm)
-    cmd := fmt.Sprintf("s3fs %s remote", c.Bucket)
+    cmd := fmt.Sprintf("goofys %s remote", c.Bucket)
     out, err := callCommand(cmd)
-    fmt.Println("%s%s", out, err)
-    return err
+    fmt.Printf("%s%s\n", out, err)
+    return nil
 }
 
-// Unmount the s3fs-fuse directory
+// Unmount the virtual directory
 func (c *Context) UmountFuse() error {
     cmd := fmt.Sprintf("umount remote")
     out, err := callCommand(cmd)
-    fmt.Println("%s%s", out, err)
+    fmt.Printf("%s%s\n", out, err)
     return err
 }
 
