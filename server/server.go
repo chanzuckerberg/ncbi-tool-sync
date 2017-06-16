@@ -4,49 +4,35 @@ import (
     "net/http"
     "io"
     "fmt"
-    "ncbi_proj/server/file"
     "strconv"
-    "ncbi_proj/server/directory"
+    "database/sql"
+    "ncbi_proj/server/controllers"
+    "github.com/gorilla/mux"
 )
 
-func Main() error {
-    mux := http.NewServeMux()
-    mux.HandleFunc("/file", fileHandler)
-    mux.HandleFunc("/directory", directoryHandler)
-    fmt.Println("STARTING LISTENER")
-    err := http.ListenAndServe(":8000", mux)
-    return err
+type Context struct {
+    db         *sql.DB
 }
 
-func fileHandler(w http.ResponseWriter, r *http.Request) {
-    pathName := r.URL.Query().Get("path-name")
-    versionNum := r.URL.Query().Get("version-num")
-    op := r.URL.Query().Get("op")
-
-    if pathName != "" && versionNum != "" {
-        // Serve up that version of the file
-        io.WriteString(w, "\n" + pathName)
-        io.WriteString(w, "\n" + versionNum)
-        num, _ := strconv.Atoi(versionNum)
-        file.Show(pathName, num)
-    } else if pathName != "" && versionNum == "" {
-        if op == "history" {
-            // Serve up file history
-            file.ShowHistory(pathName)
-        } else {
-            // Serve up the latest version of the file
-            file.ShowLatest(pathName)
-        }
-    } else {
-        //return errors.New("No name or version number")
-        io.WriteString(w, "Nothing")
+func Main() error {
+    // Load db
+    var err error
+    var ctx Context
+    ctx.db, err = sql.Open("sqlite3", "./versionDB.db")
+    defer ctx.db.Close()
+    if err != nil {
+        return err
     }
 
-}
+    // Start server
+    router := mux.NewRouter()
+    fileController := controllers.NewFileController(ctx.db)
+    fileController.Register(router)
+    directoryController := controllers.NewDirectoryController(ctx.db)
+    directoryController.Register(router)
 
-func directoryHandler(w http.ResponseWriter, r *http.Request) {
-    pathName := r.URL.Query().Get("path-name")
-    io.WriteString(w, "Path: " + pathName)
+    fmt.Println("STARTING LISTENER")
+    err = http.ListenAndServe(":8000", mux)
 
-    directory.ShowLatest(pathName)
+    return err
 }
