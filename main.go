@@ -1,11 +1,16 @@
 package main
 
 import (
-    //"ncbi_proj/server"
-    "ncbi_proj/sync"
+	//"ncbi_proj/sync"
+	"ncbi_proj/server"
+	"fmt"
 )
 
 func main() {
-    //server.Main()
-    sync.Main()
+	err := server.Main()
+	if err != nil {
+		fmt.Println("ERROR")
+		fmt.Println(err)
+	}
+	//sync.Main()
 }
