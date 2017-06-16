@@ -5,16 +5,16 @@ import (
     "net/http"
     "io"
     "ncbi_proj/server/models"
-    "database/sql"
+    "ncbi_proj/server/utils"
 )
 
 type DirectoryControllerImpl struct {
-    db  *sql.DB
+    ctx *utils.Context
 }
 
-func NewDirectoryController(db *sql.DB) *DirectoryControllerImpl {
+func NewDirectoryController(ctx *utils.Context) *DirectoryControllerImpl {
     return &DirectoryControllerImpl{
-        db: db,
+        ctx: ctx,
     }
 }
 
@@ -23,8 +23,6 @@ func (dc *DirectoryControllerImpl) Register(router *mux.Router) {
 }
 
 func (dc *DirectoryControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
-    //file := new(models.File)
-    //models.get(pathName, versionNum)
     dir := new(models.Directory)
 
     pathName := r.URL.Query().Get("path-name")

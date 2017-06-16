@@ -1,22 +1,22 @@
 package controllers
 
 import (
-    //"ncbi_proj/server/models"
     "github.com/gorilla/mux"
     "net/http"
     "io"
     "strconv"
-    "database/sql"
     "ncbi_proj/server/models"
+    "ncbi_proj/server/utils"
+    "encoding/json"
 )
 
 type FileControllerImpl struct {
-    db  *sql.DB
+    ctx *utils.Context
 }
 
-func NewFileController(db *sql.DB) *FileControllerImpl {
+func NewFileController(ctx *utils.Context) *FileControllerImpl {
     return &FileControllerImpl{
-        db: db,
+        ctx: ctx,
     }
 }
 
@@ -33,10 +33,14 @@ func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
 
     if pathName != "" && versionNum != "" {
         // Serve up that version of the file
-        io.WriteString(w, "\n" + pathName)
-        io.WriteString(w, "\n" + versionNum)
         num, _ := strconv.Atoi(versionNum)
-        file.Get(pathName, num, fc.db)
+        result, err := file.Get(pathName, num, fc.ctx)
+        js, err := json.Marshal(result)
+        if err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+        fc.WriteWithHeader(w, js)
     } else if pathName != "" && versionNum == "" {
         if op == "history" {
             // Serve up file history
@@ -49,6 +53,12 @@ func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
         //return errors.New("No name or version number")
         io.WriteString(w, "Nothing")
     }
+}
+
+func (fc *FileControllerImpl) WriteWithHeader(w http.ResponseWriter, res []byte) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write(res)
 }
 
 func (fc *FileControllerImpl) ShowLatest(pathName string) {
