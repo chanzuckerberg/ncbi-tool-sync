@@ -4,7 +4,6 @@ import (
     "github.com/gorilla/mux"
     "net/http"
     "io"
-    "strconv"
     "ncbi_proj/server/models"
     "ncbi_proj/server/utils"
     "encoding/json"
@@ -31,34 +30,35 @@ func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
     op := r.URL.Query().Get("op")
     file := new(models.File)
 
-    if pathName != "" && versionNum != "" {
-        // Serve up that version of the file
-        num, _ := strconv.Atoi(versionNum)
-        result, err := file.Get(pathName, num, fc.ctx)
-        js, err := json.Marshal(result)
+    if pathName != "" && op == "" {
+        // Serve up the file
+        result, err := file.Get(pathName, versionNum, fc.ctx)
         if err != nil {
-            http.Error(w, err.Error(), http.StatusInternalServerError)
+            fc.Error(w, err)
             return
         }
-        fc.WriteWithHeader(w, js)
-    } else if pathName != "" && versionNum == "" {
-        if op == "history" {
-            // Serve up file history
-            file.GetHistory(pathName)
-        } else {
-            // Serve up the latest version of the file
-            file.GetLatest(pathName)
-        }
+        fc.Output(w, result)
+    } else if op == "history" {
+        // Serve up file history
+        file.GetHistory(pathName)
     } else {
-        //return errors.New("No name or version number")
         io.WriteString(w, "Nothing")
     }
 }
 
-func (fc *FileControllerImpl) WriteWithHeader(w http.ResponseWriter, res []byte) {
+func (fc *FileControllerImpl) Error(w http.ResponseWriter, err error) {
+    http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+func (fc *FileControllerImpl) Output(w http.ResponseWriter, result models.Response) {
+    js, err := json.Marshal(result)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
-    w.Write(res)
+    w.Write(js)
 }
 
 func (fc *FileControllerImpl) ShowLatest(pathName string) {
