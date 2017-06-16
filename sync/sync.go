@@ -299,7 +299,7 @@ func (c *Context) getServerTime(input string) (string, error) {
 	// Find the right entry
 	for _, entry := range entries {
 		if entry.Name == file {
-			return fmt.Sprintf("%s", entry.Time), err
+			return fmt.Sprintf("%s", entry.Time.Format(time.RFC3339)), err
 		}
 	}
 	return "", err
