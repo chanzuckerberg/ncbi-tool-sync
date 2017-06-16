@@ -4,20 +4,21 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/gorilla/mux"
-	"ncbi_proj/server/controllers"
-	"net/http"
 	_ "github.com/mattn/go-sqlite3"
+	"ncbi_proj/server/controllers"
 	"ncbi_proj/server/utils"
+	"net/http"
 )
 
-func Main() error {
+func Main() {
 	// Setup
 	ctx := utils.NewContext()
 	var err error
 	ctx.Db, err = sql.Open("sqlite3", "./versionDB.db")
 	defer ctx.Db.Close()
 	if err != nil {
-		return err
+		fmt.Println("ERROR")
+		fmt.Println(err)
 	}
 
 	// Start server
@@ -30,5 +31,6 @@ func Main() error {
 	fmt.Println("STARTING LISTENER")
 	err = http.ListenAndServe(":8000", router)
 
-	return err
+	fmt.Println("ERROR")
+	fmt.Println(err)
 }
