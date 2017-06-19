@@ -24,7 +24,7 @@ func (dc *DirectoryController) Register(router *mux.Router) {
 
 func (dc *DirectoryController) Show(w http.ResponseWriter, r *http.Request) {
 	// Setup
-	dir := new(models.Directory)
+	dir := models.NewDirectory(dc.ctx)
 	op := r.URL.Query().Get("op")
 	pathName := r.URL.Query().Get("path-name")
 	var err error
@@ -37,10 +37,10 @@ func (dc *DirectoryController) Show(w http.ResponseWriter, r *http.Request) {
 		return
 	case op == "download":
 		// Serve up the folder with presigned download URLs
-		result, err = dir.GetWithURLs(pathName, dc.ctx)
+		result, err = dir.GetWithURLs(pathName)
 	default:
 		// Serve up a simple directory listing
-		result, err = dir.Get(pathName, dc.ctx)
+		result, err = dir.Get(pathName)
 	}
 
 	if err != nil {
