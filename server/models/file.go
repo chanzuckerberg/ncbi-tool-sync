@@ -15,21 +15,19 @@ import (
 type File struct {
 }
 
-type Meta struct {
-	pathName     string
-	versionNum   int
-	dateModified sql.NullString
-	archiveKey   sql.NullString
+type Metadata struct {
+	Path       string
+	Version    int
+	ModTime    sql.NullString
+	ArchiveKey sql.NullString
 }
 
 type EntryWithUrl struct {
-	Path    string
-	Version int
-	ModTime string
-	Url     string
+	VersionEntry
+	Url string
 }
 
-type Entry struct {
+type VersionEntry struct {
 	Path    string
 	Version int
 	ModTime string
@@ -59,20 +57,18 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Entr
 
 	url, err = f.S3KeyToURL(key, ctx)
 	if err == nil {
-		resp = EntryWithUrl{
-			info.pathName,
-			info.versionNum,
-			info.dateModified.String,
-			url,
-		}
+		resp.Path = info.Path
+		resp.Version = info.Version
+		resp.ModTime = info.ModTime.String
+		resp.Url = url
 	}
 	return resp, err
 }
 
 // Get info about the file from the db
-func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (Meta, error) {
+func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (Metadata, error) {
 	// Query the database
-	md := Meta{}
+	md := Metadata{}
 	var query string
 
 	if versionNum > 1 {
@@ -93,19 +89,19 @@ func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (M
 
 	// Process results
 	row.Next()
-	err = row.Scan(&md.pathName, &md.versionNum, &md.dateModified, &md.archiveKey)
+	err = row.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	return md, err
 }
 
 // Look in database for proper key for specific version
-func (f *File) getS3Key(info Meta, ctx *utils.Context) string {
+func (f *File) getS3Key(info Metadata, ctx *utils.Context) string {
 	res := ""
-	if !info.archiveKey.Valid {
-		// Entry is there but not archived. Just serve the latest.
-		return info.pathName
+	if !info.ArchiveKey.Valid {
+		// VersionEntry is there but not archived. Just serve the latest.
+		return info.Path
 	} else {
 		// Success
-		archiveKey := info.archiveKey.String
+		archiveKey := info.ArchiveKey.String
 		res = fmt.Sprintf("/archive/%s", archiveKey)
 	}
 	return res
@@ -127,9 +123,9 @@ func (f *File) S3KeyToURL(key string, ctx *utils.Context) (string, error) {
 
 // Get response for the revision history of a file
 func (f *File) GetHistory(pathName string,
-	ctx *utils.Context) ([]Entry, error) {
+	ctx *utils.Context) ([]VersionEntry, error) {
 	var err error
-	res := []Entry{}
+	res := []VersionEntry{}
 
 	// Query the database
 	query := fmt.Sprintf("select * from entries "+
@@ -142,17 +138,17 @@ func (f *File) GetHistory(pathName string,
 	}
 
 	// Process results
-	md := Meta{}
+	md := Metadata{}
 	for rows.Next() {
-		err = rows.Scan(&md.pathName, &md.versionNum,
-			&md.dateModified, &md.archiveKey)
+		err = rows.Scan(&md.Path, &md.Version,
+			&md.ModTime, &md.ArchiveKey)
 		if err != nil {
 			return res, err
 		}
-		entry := Entry{
-			md.pathName,
-			md.versionNum,
-			md.dateModified.String,
+		entry := VersionEntry{
+			md.Path,
+			md.Version,
+			md.ModTime.String,
 		}
 		res = append(res, entry)
 	}

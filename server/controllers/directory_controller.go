@@ -2,35 +2,50 @@ package controllers
 
 import (
 	"github.com/gorilla/mux"
-	"io"
 	"ncbi_proj/server/models"
 	"ncbi_proj/server/utils"
 	"net/http"
 )
 
-type DirectoryControllerImpl struct {
+type DirectoryController struct {
+	ApplicationController
 	ctx *utils.Context
 }
 
-func NewDirectoryController(ctx *utils.Context) *DirectoryControllerImpl {
-	return &DirectoryControllerImpl{
+func NewDirectoryController(ctx *utils.Context) *DirectoryController {
+	return &DirectoryController{
 		ctx: ctx,
 	}
 }
 
-func (dc *DirectoryControllerImpl) Register(router *mux.Router) {
+func (dc *DirectoryController) Register(router *mux.Router) {
 	router.HandleFunc("/directory", dc.Show)
 }
 
-func (dc *DirectoryControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
+func (dc *DirectoryController) Show(w http.ResponseWriter, r *http.Request) {
+	// Setup
 	dir := new(models.Directory)
-
+	op := r.URL.Query().Get("op")
 	pathName := r.URL.Query().Get("path-name")
-	io.WriteString(w, "Path: "+pathName)
+	var err error
+	var result interface{}
 
-	dir.GetLatest(pathName)
-}
+	// Dispatch operations
+	switch {
+	case pathName == "":
+		dc.BadRequest(w)
+		return
+	case op == "download":
+		// Serve up the folder with presigned download URLs
+		result, err = dir.GetWithURLs(pathName, dc.ctx)
+	default:
+		// Serve up a simple directory listing
+		result, err = dir.Get(pathName, dc.ctx)
+	}
 
-func (dc *DirectoryControllerImpl) ShowLatest(pathName string) {
-
+	if err != nil {
+		dc.Error(w, err)
+		return
+	}
+	dc.Output(w, result)
 }
