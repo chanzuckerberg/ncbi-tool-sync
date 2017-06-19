@@ -26,7 +26,7 @@ func (c *Context) LoadConfig() *Context {
 func (c *Context) MountFuse() error {
 	_ = os.Mkdir("remote", os.ModePerm)
 	cmd := fmt.Sprintf("goofys %s remote", c.Bucket)
-	out, err := callCommand(cmd)
+	out, err := CallCommand(cmd)
 	fmt.Printf("%s%s\n", out, err)
 	return nil
 }
@@ -34,7 +34,7 @@ func (c *Context) MountFuse() error {
 // Unmount the virtual directory
 func (c *Context) UmountFuse() error {
 	cmd := fmt.Sprintf("umount remote")
-	out, err := callCommand(cmd)
+	out, err := CallCommand(cmd)
 	fmt.Printf("%s%s\n", out, err)
 	return err
 }
