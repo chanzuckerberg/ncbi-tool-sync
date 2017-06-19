@@ -25,6 +25,8 @@ func (fc *FileControllerImpl) Register(router *mux.Router) {
 
 func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
 	// Setup
+	var err error
+	var result interface{}
 	pathName := r.URL.Query().Get("path-name")
 	versionNum := r.URL.Query().Get("version-num")
 	op := r.URL.Query().Get("op")
@@ -32,18 +34,19 @@ func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
 
 	if pathName != "" && op == "" {
 		// Serve up the file
-		result, err := file.Get(pathName, versionNum, fc.ctx)
-		if err != nil {
-			fc.Error(w, err)
-			return
-		}
-		fc.Output(w, result)
+		result, err = file.Get(pathName, versionNum, fc.ctx)
 	} else if op == "history" {
 		// Serve up file history
-		file.GetHistory(pathName)
+		result, err = file.GetHistory(pathName, fc.ctx)
 	} else {
 		io.WriteString(w, "Nothing")
+		return
 	}
+	if err != nil {
+		fc.Error(w, err)
+		return
+	}
+	fc.Output(w, result)
 }
 
 func (fc *FileControllerImpl) Error(w http.ResponseWriter, err error) {
@@ -51,7 +54,7 @@ func (fc *FileControllerImpl) Error(w http.ResponseWriter, err error) {
 }
 
 func (fc *FileControllerImpl) Output(w http.ResponseWriter,
-	result models.Response) {
+	result interface{}) {
 	js, err := json.Marshal(result)
 	if err != nil {
 		fc.Error(w, err)

@@ -1,4 +1,4 @@
-package server
+package main
 
 import (
 	"database/sql"
@@ -18,11 +18,11 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func Main() {
+func main() {
 	// Setup
 	ctx := utils.NewContext()
 	var err error
-	ctx.Db, err = sql.Open("sqlite3", "./versionDB.db")
+	ctx.Db, err = sql.Open("sqlite3", "../versionDB.db")
 	defer ctx.Db.Close()
 	if err != nil {
 		log.Fatal(err)

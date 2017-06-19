@@ -27,6 +27,13 @@ type Response struct {
 	Url     string
 }
 
+type HistoryResponse struct {
+	Path    string
+	Version int
+	ModTime string
+}
+
+// Get response for a file and version
 func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Response, error) {
 	var url string
 	var err error
@@ -56,6 +63,7 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Resp
 	return resp, err
 }
 
+// Get info about the file from the db
 func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (Meta, error) {
 	// Query the database
 	md := Meta{}
@@ -101,6 +109,37 @@ func (f *File) S3KeyToURL(key string, ctx *utils.Context) (string, error) {
 	return url, err
 }
 
-func (f *File) GetHistory(pathName string) {
+// Get response for the revision history of a file
+func (f *File) GetHistory(pathName string,
+	ctx *utils.Context) ([]HistoryResponse, error) {
+	var err error
+	res := []HistoryResponse{}
 
+	// Query the database
+	query := fmt.Sprintf("select * from entries "+
+		"where PathName='%s' order by VersionNum desc", pathName)
+	rows, err := ctx.Db.Query(query)
+	defer rows.Close()
+	if err != nil {
+		// Unsuccessful db query
+		return res, err
+	}
+
+	// Process results
+	md := Meta{}
+	for rows.Next() {
+		err = rows.Scan(&md.pathName, &md.versionNum,
+			&md.dateModified, &md.archiveKey)
+		if err != nil {
+			return res, err
+		}
+		entry := HistoryResponse{
+			md.pathName,
+			md.versionNum,
+			md.dateModified.String,
+		}
+		res = append(res, entry)
+	}
+
+	return res, err
 }

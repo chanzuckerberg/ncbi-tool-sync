@@ -1,4 +1,4 @@
-package sync
+package main
 
 import (
 	"crypto/md5"
@@ -36,7 +36,7 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func Main() {
+func main() {
 	var c Context
 	var err error
 	c.loadConfig()
@@ -123,7 +123,7 @@ func (c *Context) ProcessChanges(new []string, modified []string,
 	tempDir string) error {
 	// Open db
 	var err error
-	c.db, err = sql.Open("sqlite3", "./versionDB.db")
+	c.db, err = sql.Open("sqlite3", "../versionDB.db")
 	defer c.db.Close()
 	if err != nil {
 		return err
@@ -246,7 +246,7 @@ func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 		}
 
 		// Setup
-		newPath := origPath[len(c.LocalTop)-2:] // Remove first part of newPath
+		newPath := origPath[len(c.LocalTop)-2:]                // Remove first part of newPath
 		newPath = strings.Replace(newPath, tempDir+"/", "", 1) // Remove tempDir
 		num := c.findPrevVersionNum(newPath, false)
 		key, err := GenerateHash(origPath, newPath, num)
