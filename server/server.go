@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
+	"log"
 	"ncbi_proj/server/controllers"
 	"ncbi_proj/server/utils"
 	"net/http"
+	"os"
 )
+
+func init() {
+	log.SetOutput(os.Stderr)
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
 
 func Main() {
 	// Setup
@@ -17,8 +25,7 @@ func Main() {
 	ctx.Db, err = sql.Open("sqlite3", "./versionDB.db")
 	defer ctx.Db.Close()
 	if err != nil {
-		fmt.Println("ERROR")
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 
 	// Start server

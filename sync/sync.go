@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,29 +30,35 @@ type Context struct {
 	Bucket     string `yaml:"Bucket"`
 }
 
+func init() {
+	log.SetOutput(os.Stderr)
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
+
 func Main() {
 	var c Context
 	var err error
 	c.loadConfig()
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 
 	err = c.callRsyncFlow(c.SourcePath)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 }
 
-func callCommand(input string) ([]byte, error) {
+func CallCommand(input string) ([]byte, error) {
 	return exec.Command("sh", "-c", input).Output()
 }
 
 // Parse the Rsync itemized output for new, modified, and deleted files
-func parseChanges(out []byte, base string) ([]string, []string, []string) {
+func ParseChanges(out []byte, base string) ([]string, []string, []string) {
 	changes := strings.Split(string(out[:]), "\n")
 
-	changes = changes[1 : len(changes)-4] // Remove junk lines
+	changes = changes[1 : len(changes)-3] // Remove junk lines
 
 	var new, modified, deleted []string
 
@@ -79,19 +86,19 @@ func (c *Context) callRsyncFlow(input string) error {
 
 	// Construct Rsync parameters
 	source := fmt.Sprintf("rsync://%s%s/", c.Server, input)
-	tempDir := curTimeName()
-	template := "rsync -abrzv %s --itemize-changes --delete --size-only --no-motd " +
-		"--exclude='.*' --backup-dir='%s' %s %s"
+	tempDir := CurTimeName()
+	template := "rsync -abrzv %s --itemize-changes --delete " +
+		"--size-only --no-motd --exclude='.*' --backup-dir='%s' %s %s"
 
 	// Dry run
 	cmd = fmt.Sprintf(template, "-n", tempDir, source, c.LocalPath)
 	fmt.Println(cmd)
-	out, err := callCommand(cmd)
+	out, err := CallCommand(cmd)
 	if err != nil {
 		fmt.Printf("%s, %s", out, err)
 		return err
 	}
-	new, modified, deleted := parseChanges(out, input)
+	new, modified, deleted := ParseChanges(out, input)
 	fmt.Printf("\nNew from remote: %s", new)
 	fmt.Printf("\nModified from remote: %s", modified)
 	fmt.Printf("\nDeleted from remote: %s", deleted)
@@ -100,7 +107,7 @@ func (c *Context) callRsyncFlow(input string) error {
 	fmt.Println("\nGOING TO START REAL RUN")
 	os.MkdirAll(c.LocalPath, os.ModePerm)
 	cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
-	out, err = callCommand(cmd)
+	out, err = CallCommand(cmd)
 	fmt.Printf("\n%s%s\n", out, err)
 	if err != nil {
 		return err
@@ -108,11 +115,12 @@ func (c *Context) callRsyncFlow(input string) error {
 
 	// Process changes
 	fmt.Println("\nGOING TO PROCESS CHANGES")
-	err = c.processChanges(new, modified, tempDir)
+	err = c.ProcessChanges(new, modified, tempDir)
 	return err
 }
 
-func (c *Context) processChanges(new []string, modified []string, tempDir string) error {
+func (c *Context) ProcessChanges(new []string, modified []string,
+	tempDir string) error {
 	// Open db
 	var err error
 	c.db, err = sql.Open("sqlite3", "./versionDB.db")
@@ -223,7 +231,7 @@ func (c *Context) findPrevVersionNum(file string, includeArchived bool) int {
 }
 
 // Generate a folder name from the current datetime
-func curTimeName() string {
+func CurTimeName() string {
 	t := time.Now()
 	result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
 		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
@@ -238,10 +246,10 @@ func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 		}
 
 		// Setup
-		newPath := origPath[len(c.LocalTop)-2:]                // Remove first part of newPath
+		newPath := origPath[len(c.LocalTop)-2:] // Remove first part of newPath
 		newPath = strings.Replace(newPath, tempDir+"/", "", 1) // Remove tempDir
 		num := c.findPrevVersionNum(newPath, false)
-		key, err := generateHash(origPath, newPath, num)
+		key, err := GenerateHash(origPath, newPath, num)
 		if err != nil {
 			return err
 		}
@@ -260,7 +268,7 @@ func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 }
 
 // Hash for archiveKey
-func generateHash(origPath string, path string, num int) (string, error) {
+func GenerateHash(origPath string, path string, num int) (string, error) {
 	// Add a header
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
 	hash := md5.New()

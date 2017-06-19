@@ -50,10 +50,11 @@ func (fc *FileControllerImpl) Error(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
-func (fc *FileControllerImpl) Output(w http.ResponseWriter, result models.Response) {
+func (fc *FileControllerImpl) Output(w http.ResponseWriter,
+	result models.Response) {
 	js, err := json.Marshal(result)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fc.Error(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
