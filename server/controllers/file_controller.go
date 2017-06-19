@@ -3,7 +3,6 @@ package controllers
 import (
 	"encoding/json"
 	"github.com/gorilla/mux"
-	"io"
 	"ncbi_proj/server/models"
 	"ncbi_proj/server/utils"
 	"net/http"
@@ -39,7 +38,7 @@ func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
 		// Serve up file history
 		result, err = file.GetHistory(pathName, fc.ctx)
 	} else {
-		io.WriteString(w, "Nothing")
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 	if err != nil {
@@ -50,7 +49,7 @@ func (fc *FileControllerImpl) Show(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fc *FileControllerImpl) Error(w http.ResponseWriter, err error) {
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	http.Error(w, "ERROR: "+err.Error(), http.StatusInternalServerError)
 }
 
 func (fc *FileControllerImpl) Output(w http.ResponseWriter,
