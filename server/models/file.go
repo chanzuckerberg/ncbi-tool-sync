@@ -13,6 +13,13 @@ import (
 )
 
 type File struct {
+	ctx   *utils.Context
+}
+
+func NewFile(ctx *utils.Context) *File {
+	return &File{
+		ctx: ctx,
+	}
 }
 
 type Metadata struct {
@@ -34,7 +41,7 @@ type VersionEntry struct {
 }
 
 // Get response for a file and version
-func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (EntryWithUrl, error) {
+func (f *File) Get(pathName string, versionNum string) (EntryWithUrl, error) {
 	var url string
 	var err error
 	key := pathName
@@ -42,7 +49,7 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Entr
 
 	// Get file info from db
 	num, _ := strconv.Atoi(versionNum)
-	info, err := f.getDbInfo(pathName, num, ctx)
+	info, err := f.getDbInfo(pathName, num)
 	if err != nil {
 		// No results at all for this name and version
 		err = errors.New("No results for this file and version.")
@@ -52,10 +59,10 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Entr
 	// Get archive blob key if version is specified.
 	// Otherwise leave plain pathName for latest version.
 	if versionNum != "" {
-		key = f.getS3Key(info, ctx)
+		key = f.getS3Key(info)
 	}
 
-	url, err = f.S3KeyToURL(key, ctx)
+	url, err = f.S3KeyToURL(key)
 	if err == nil {
 		resp.Path = info.Path
 		resp.Version = info.Version
@@ -66,7 +73,7 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Entr
 }
 
 // Get info about the file from the db
-func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (Metadata, error) {
+func (f *File) getDbInfo(pathName string, versionNum int) (Metadata, error) {
 	// Query the database
 	md := Metadata{}
 	var query string
@@ -81,7 +88,7 @@ func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (M
 			"where PathName='%s' order by VersionNum desc", pathName)
 	}
 
-	row, err := ctx.Db.Query(query)
+	row, err := f.ctx.Db.Query(query)
 	defer row.Close()
 	if err != nil {
 		return md, err
@@ -94,7 +101,7 @@ func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (M
 }
 
 // Look in database for proper key for specific version
-func (f *File) getS3Key(info Metadata, ctx *utils.Context) string {
+func (f *File) getS3Key(info Metadata) string {
 	res := ""
 	if !info.ArchiveKey.Valid {
 		// VersionEntry is there but not archived. Just serve the latest.
@@ -108,13 +115,13 @@ func (f *File) getS3Key(info Metadata, ctx *utils.Context) string {
 }
 
 // Get a pre-signed temporary URL from S3 for a key
-func (f *File) S3KeyToURL(key string, ctx *utils.Context) (string, error) {
+func (f *File) S3KeyToURL(key string) (string, error) {
 	url := ""
-	svc := s3.New(session.New(&aws.Config{
+	svc := s3.New(session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-west-2"),
-	}))
+	})))
 	req, _ := svc.GetObjectRequest(&s3.GetObjectInput{
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(f.ctx.Bucket),
 		Key:    aws.String(key),
 	})
 	url, err := req.Presign(1 * time.Hour)
@@ -122,15 +129,14 @@ func (f *File) S3KeyToURL(key string, ctx *utils.Context) (string, error) {
 }
 
 // Get response for the revision history of a file
-func (f *File) GetHistory(pathName string,
-	ctx *utils.Context) ([]VersionEntry, error) {
+func (f *File) GetHistory(pathName string) ([]VersionEntry, error) {
 	var err error
 	res := []VersionEntry{}
 
 	// Query the database
 	query := fmt.Sprintf("select * from entries "+
 		"where PathName='%s' order by VersionNum desc", pathName)
-	rows, err := ctx.Db.Query(query)
+	rows, err := f.ctx.Db.Query(query)
 	defer rows.Close()
 	if err != nil {
 		// Unsuccessful db query

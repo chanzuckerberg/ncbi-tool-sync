@@ -9,6 +9,7 @@ import (
 )
 
 type Directory struct {
+	ctx   *utils.Context
 }
 
 type PathEntry struct {
@@ -20,15 +21,20 @@ type PathUrlEntry struct {
 	Url  string
 }
 
+func NewDirectory(ctx *utils.Context) *Directory {
+	return &Directory{
+		ctx: ctx,
+	}
+}
+
 // Get directory listing paths-only, latest versions
-func (d *Directory) Get(pathName string,
-	ctx *utils.Context) ([]PathEntry, error) {
+func (d *Directory) Get(pathName string) ([]PathEntry, error) {
 	// Setup
 	var err error
 	resp := []PathEntry{}
 
 	// List objects at the path
-	listing, err := d.ListObjects(pathName, ctx)
+	listing, err := d.ListObjects(pathName)
 	if err != nil || len(listing) < 1 {
 		return resp, errors.New("Directory does not exist")
 	}
@@ -43,15 +49,14 @@ func (d *Directory) Get(pathName string,
 }
 
 // Get directory listing with download URLs, latest versions
-func (d *Directory) GetWithURLs(pathName string,
-	ctx *utils.Context) ([]PathUrlEntry, error) {
+func (d *Directory) GetWithURLs(pathName string) ([]PathUrlEntry, error) {
 	// Setup
 	resp := []PathUrlEntry{}
 	var err error
-	file := new(File)
+	file := NewFile(d.ctx)
 
 	// List objects at the path
-	listing, err := d.ListObjects(pathName, ctx)
+	listing, err := d.ListObjects(pathName)
 	if err != nil || len(listing) < 1 {
 		return resp, errors.New("Directory does not exist")
 	}
@@ -59,7 +64,7 @@ func (d *Directory) GetWithURLs(pathName string,
 	// Process results
 	for _, val := range listing {
 		key := *val.Key
-		url, err := file.S3KeyToURL(key, ctx)
+		url, err := file.S3KeyToURL(key)
 		if err != nil {
 			return resp, err
 		}
@@ -71,12 +76,11 @@ func (d *Directory) GetWithURLs(pathName string,
 }
 
 // Check if a file exists on S3
-func (d *Directory) FileExists(pathName string,
-	ctx *utils.Context) (bool, error) {
-	svc := s3.New(session.New(),
+func (d *Directory) FileExists(pathName string) (bool, error) {
+	svc := s3.New(session.Must(session.NewSession()),
 		&aws.Config{Region: aws.String("us-west-2")})
 	params := &s3.HeadObjectInput{
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(d.ctx.Bucket),
 		Key:    aws.String(pathName),
 	}
 	_, err := svc.HeadObject(params)
@@ -87,15 +91,14 @@ func (d *Directory) FileExists(pathName string,
 }
 
 // List objects with a given prefix in S3
-func (d *Directory) ListObjects(pathName string,
-	ctx *utils.Context) ([]*s3.Object, error) {
+func (d *Directory) ListObjects(pathName string) ([]*s3.Object, error) {
 	var err error
 
 	pathName = pathName[1:]
-	svc := s3.New(session.New(),
+	svc := s3.New(session.Must(session.NewSession()),
 		&aws.Config{Region: aws.String("us-west-2")})
 	params := &s3.ListObjectsInput{
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(d.ctx.Bucket),
 		Prefix: aws.String(pathName),
 	}
 

@@ -24,7 +24,7 @@ func (fc *FileController) Register(router *mux.Router) {
 
 func (fc *FileController) Show(w http.ResponseWriter, r *http.Request) {
 	// Setup
-	file := new(models.File)
+	file := models.NewFile(fc.ctx)
 	op := r.URL.Query().Get("op")
 	pathName := r.URL.Query().Get("path-name")
 	var err error
@@ -38,10 +38,10 @@ func (fc *FileController) Show(w http.ResponseWriter, r *http.Request) {
 		return
 	case op == "history":
 		// Serve up file history
-		result, err = file.GetHistory(pathName, fc.ctx)
+		result, err = file.GetHistory(pathName)
 	default:
 		// Serve up the file
-		result, err = file.Get(pathName, versionNum, fc.ctx)
+		result, err = file.Get(pathName, versionNum)
 	}
 
 	if err != nil {
