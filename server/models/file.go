@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -21,30 +22,32 @@ type Meta struct {
 	archiveKey   sql.NullString
 }
 
-type Response struct {
+type EntryWithUrl struct {
 	Path    string
+	Version int
 	ModTime string
 	Url     string
 }
 
-type HistoryResponse struct {
+type Entry struct {
 	Path    string
 	Version int
 	ModTime string
 }
 
 // Get response for a file and version
-func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Response, error) {
+func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (EntryWithUrl, error) {
 	var url string
 	var err error
 	key := pathName
-	resp := Response{}
+	resp := EntryWithUrl{}
 
 	// Get file info from db
 	num, _ := strconv.Atoi(versionNum)
 	info, err := f.getDbInfo(pathName, num, ctx)
 	if err != nil {
 		// No results at all for this name and version
+		err = errors.New("No results for this file and version.")
 		return resp, err
 	}
 
@@ -56,9 +59,12 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Resp
 
 	url, err = f.S3KeyToURL(key, ctx)
 	if err == nil {
-		resp.Path = pathName
-		resp.ModTime = info.dateModified.String
-		resp.Url = url
+		resp = EntryWithUrl{
+			info.pathName,
+			info.versionNum,
+			info.dateModified.String,
+			url,
+		}
 	}
 	return resp, err
 }
@@ -67,8 +73,18 @@ func (f *File) Get(pathName string, versionNum string, ctx *utils.Context) (Resp
 func (f *File) getDbInfo(pathName string, versionNum int, ctx *utils.Context) (Meta, error) {
 	// Query the database
 	md := Meta{}
-	query := fmt.Sprintf("select * from entries "+
-		"where PathName='%s' and VersionNum=%d", pathName, versionNum)
+	var query string
+
+	if versionNum > 1 {
+		// Get specified version
+		query = fmt.Sprintf("select * from entries "+
+			"where PathName='%s' and VersionNum=%d", pathName, versionNum)
+	} else {
+		// Get latest version
+		query = fmt.Sprintf("select * from entries "+
+			"where PathName='%s' order by VersionNum desc", pathName)
+	}
+
 	row, err := ctx.Db.Query(query)
 	defer row.Close()
 	if err != nil {
@@ -111,9 +127,9 @@ func (f *File) S3KeyToURL(key string, ctx *utils.Context) (string, error) {
 
 // Get response for the revision history of a file
 func (f *File) GetHistory(pathName string,
-	ctx *utils.Context) ([]HistoryResponse, error) {
+	ctx *utils.Context) ([]Entry, error) {
 	var err error
-	res := []HistoryResponse{}
+	res := []Entry{}
 
 	// Query the database
 	query := fmt.Sprintf("select * from entries "+
@@ -133,7 +149,7 @@ func (f *File) GetHistory(pathName string,
 		if err != nil {
 			return res, err
 		}
-		entry := HistoryResponse{
+		entry := Entry{
 			md.pathName,
 			md.versionNum,
 			md.dateModified.String,
