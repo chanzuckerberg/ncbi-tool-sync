@@ -57,27 +57,28 @@ func (f *File) Get(pathName string, attribute string,
 	val string) (Entry, error) {
 	key := pathName
 	info := Metadata{}
+	res := Entry{}
 	var err error
 
 	switch attribute {
 	case "latest":
 		info, err = f.entryFromVersion(pathName, 0)
-	case "verisonNum":
+	case "versionNum":
 		num, _ := strconv.Atoi(val)
 		info, err = f.entryFromVersion(pathName, num)
 	case "inputTime":
 		info, err = f.entryFromTime(pathName, val)
 	default:
-		return nil, err
+		return res, err
 	}
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	key = f.getS3Key(info)
 	url, err := f.S3KeyToURL(key)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	return Entry{
 		info.Path,
@@ -118,7 +119,7 @@ func (f *File) topFromQuery(query string) (Metadata, error) {
 func (f *File) entryFromVersion(pathName string,
 	versionNum int) (Metadata, error) {
 	query := ""
-	if versionNum > 1 {
+	if versionNum > 0 {
 		// Get specified version
 		query = fmt.Sprintf("select * from entries "+
 			"where PathName='%s' and VersionNum=%d", pathName, versionNum)
