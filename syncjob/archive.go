@@ -1,10 +1,10 @@
 package main
 
 import (
-	"path/filepath"
-	"os"
-	"strings"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 func (c *Context) archiveOldVersions(tempDir string) error {

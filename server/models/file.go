@@ -32,7 +32,7 @@ type Entry struct {
 	Path    string
 	Version int
 	ModTime string
-	Url string
+	Url     string
 }
 
 // Get response for a file and version
@@ -90,8 +90,8 @@ func (f *File) Get(pathName string, attribute string,
 func (f *File) entryFromTime(pathName string,
 	inputTime string) (Metadata, error) {
 	// Query the database
-	query := fmt.Sprintf("select * from entries where " +
-		"PathName='%s' and DateModified <= datetime('%s') order " +
+	query := fmt.Sprintf("select * from entries where "+
+		"PathName='%s' and DateModified <= datetime('%s') order "+
 		"by VersionNum desc", pathName, inputTime)
 	return f.topFromQuery(query)
 }

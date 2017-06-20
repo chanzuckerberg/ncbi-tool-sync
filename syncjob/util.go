@@ -1,21 +1,21 @@
 package main
 
 import (
-	"time"
-	"fmt"
 	"crypto/md5"
-	"io"
-	"os"
 	"encoding/hex"
-	"io/ioutil"
+	"fmt"
 	"gopkg.in/yaml.v2"
+	"io"
+	"io/ioutil"
+	"os"
+	"time"
 )
 
 // Generate a folder name from the current datetime
 func timeName() string {
 	t := time.Now()
 	result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
-	t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
+		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
 	return result
 }
 
