@@ -112,18 +112,3 @@ func (c *Context) callRsyncFlow(input string) error {
 	err = c.processChanges(newNow, modified, tempDir)
 	return err
 }
-
-// Load the configuration file
-func (c *Context) loadConfig() *Context {
-	file, err := ioutil.ReadFile("config.yaml")
-	if err != nil {
-		panic(err)
-	}
-
-	err = yaml.Unmarshal(file, c)
-	if err != nil {
-		panic(err)
-	}
-
-	return c
-}
