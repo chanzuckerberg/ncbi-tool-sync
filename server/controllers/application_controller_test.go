@@ -1,11 +1,11 @@
 package controllers
 
 import (
-	"testing"
-	"ncbi_proj/server/utils"
-	"ncbi_proj/server/models"
-	"net/http/httptest"
 	"github.com/stretchr/testify/assert"
+	"ncbi_proj/server/models"
+	"ncbi_proj/server/utils"
+	"net/http/httptest"
+	"testing"
 )
 
 func TestOutput(t *testing.T) {

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"path/filepath"
 	"fmt"
-	"time"
 	"github.com/jlaffaye/ftp"
+	"path/filepath"
+	"time"
 )
 
 // Get the date time modified from the FTP server
