@@ -14,12 +14,11 @@ type mockService struct {
 }
 
 func (m mockService) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
-	var val *string
-	temp := "Value 1"
-	val = &temp
-	temp = "Value 2"
-	val2 := &temp
-	res := &s3.ListObjectsOutput{Contents: []*s3.Object{{Key: val}, {Key: val2}}}
+	temp1 := "Value 1"
+	val1 := &temp1
+	temp2 := "Value 2"
+	val2 := &temp2
+	res := &s3.ListObjectsOutput{Contents: []*s3.Object{{Key: val1}, {Key: val2}}}
 	return res, nil
 }
 
@@ -31,5 +30,5 @@ func TestGet(t *testing.T) {
 	if err != nil {
 		t.FailNow()
 	}
-	assert.Equal(t, "[{Value 2} {Value 2}]", fmt.Sprintf("%s", res))
+	assert.Equal(t, "[{Value 1} {Value 2}]", fmt.Sprintf("%s", res))
 }

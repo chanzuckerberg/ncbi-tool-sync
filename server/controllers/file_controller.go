@@ -30,6 +30,7 @@ func (fc *FileController) Show(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var result interface{}
 	versionNum := r.URL.Query().Get("version-num")
+	inputTime := r.URL.Query().Get("input-time")
 
 	// Dispatch operations
 	switch {
@@ -39,9 +40,15 @@ func (fc *FileController) Show(w http.ResponseWriter, r *http.Request) {
 	case op == "history":
 		// Serve up file history
 		result, err = file.GetHistory(pathName)
+	case op == "at-time":
+		// Serve up the file version at or before a given time
+		result, err = file.GetAtTime(pathName, inputTime)
+	case versionNum != "":
+		// Serve up file version
+		result, err = file.GetVersion(pathName, versionNum)
 	default:
-		// Serve up the file
-		result, err = file.Get(pathName, versionNum)
+		// Serve up the file, latest version
+		result, err = file.GetLatest(pathName)
 	}
 
 	if err != nil {
