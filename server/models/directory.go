@@ -33,7 +33,7 @@ func (d *Directory) Get(pathName string) ([]PathEntry, error) {
 	resp := []PathEntry{}
 
 	// List objects at the path
-	listing, err := d.ListObjects(pathName)
+	listing, err := d.ListObj(pathName)
 	if err != nil || len(listing) < 1 {
 		return resp, errors.New("Directory does not exist")
 	}
@@ -55,7 +55,7 @@ func (d *Directory) GetWithURLs(pathName string) ([]PathUrlEntry, error) {
 	file := NewFile(d.ctx)
 
 	// List objects at the path
-	listing, err := d.ListObjects(pathName)
+	listing, err := d.ListObj(pathName)
 	if err != nil || len(listing) < 1 {
 		return resp, errors.New("Directory does not exist")
 	}
@@ -88,7 +88,7 @@ func (d *Directory) FileExists(pathName string) (bool, error) {
 }
 
 // List objects with a given prefix in S3
-func (d *Directory) ListObjects(pathName string) ([]*s3.Object, error) {
+func (d *Directory) ListObj(pathName string) ([]*s3.Object, error) {
 	var err error
 
 	pathName = pathName[1:] // Remove leading forward slash

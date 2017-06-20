@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 )
 
 type Context struct {
@@ -19,7 +20,7 @@ type Context struct {
 	LocalPath  string `yaml:"LocalPath"`
 	LocalTop   string `yaml:"LocalTop"`
 	Bucket     string `yaml:"Bucket"`
-	Store      *s3.S3
+	Store      s3iface.S3API
 }
 
 func NewContext() *Context {
