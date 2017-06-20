@@ -45,7 +45,7 @@ func (fc *FileController) Show(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		fc.Error(w, err)
+		fc.InternalError(w, err)
 		return
 	}
 	fc.Output(w, result)

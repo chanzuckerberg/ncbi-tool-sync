@@ -140,8 +140,10 @@ func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 		}
 
 		// Setup
-		newPath := origPath[len(c.LocalTop)-2:]                // Remove first part of newPath
-		newPath = strings.Replace(newPath, tempDir+"/", "", 1) // Remove tempDir
+		// Remove first part of newPath.
+		newPath := origPath[len(c.LocalTop)-2:]
+		// Remove the segment specifying the temporary directory.
+		newPath = strings.Replace(newPath, tempDir+"/", "", 1)
 		num := c.lastVersionNum(newPath, false)
 		key, err := generateHash(origPath, newPath, num)
 		if err != nil {

@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/aws"
 )
 
 type Context struct {
@@ -16,25 +19,34 @@ type Context struct {
 	LocalPath  string `yaml:"LocalPath"`
 	LocalTop   string `yaml:"LocalTop"`
 	Bucket     string `yaml:"Bucket"`
+	Store      *s3.S3
 }
 
 func NewContext() *Context {
 	ctx := Context{}
 	ctx.loadConfig()
+	ctx.connectAWS()
 	return &ctx
 }
 
 // Load the configuration file
-func (ctx *Context) loadConfig() *Context {
+func (ctx *Context) loadConfig() (*Context, error) {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	err = yaml.Unmarshal(file, ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
+	return ctx, err
+}
+
+func (ctx *Context) connectAWS() *Context {
+	ctx.Store = s3.New(session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-west-2"),
+	})))
 	return ctx
 }

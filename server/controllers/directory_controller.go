@@ -36,7 +36,7 @@ func (dc *DirectoryController) Show(w http.ResponseWriter, r *http.Request) {
 		dc.BadRequest(w)
 		return
 	case op == "download":
-		// Serve up the folder with presigned download URLs
+		// Serve up the folder with pre-signed download URLs
 		result, err = dir.GetWithURLs(pathName)
 	default:
 		// Serve up a simple directory listing
@@ -44,7 +44,7 @@ func (dc *DirectoryController) Show(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		dc.Error(w, err)
+		dc.InternalError(w, err)
 		return
 	}
 	dc.Output(w, result)
