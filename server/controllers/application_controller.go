@@ -10,7 +10,11 @@ type ApplicationController struct {
 	ctx *utils.Context
 }
 
-func (ac *ApplicationController) Error(w http.ResponseWriter, err error) {
+func NewApplicationController(ctx *utils.Context) *ApplicationController {
+	return &ApplicationController{ctx: ctx}
+}
+
+func (ac *ApplicationController) InternalError(w http.ResponseWriter, err error) {
 	http.Error(w, "ERROR: "+err.Error(), http.StatusInternalServerError)
 }
 
@@ -22,7 +26,7 @@ func (ac *ApplicationController) Output(w http.ResponseWriter,
 	result interface{}) {
 	js, err := json.Marshal(result)
 	if err != nil {
-		ac.Error(w, err)
+		ac.InternalError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

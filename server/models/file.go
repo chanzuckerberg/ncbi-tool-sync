@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"ncbi_proj/server/utils"
 	"strconv"
@@ -13,7 +12,7 @@ import (
 )
 
 type File struct {
-	ctx   *utils.Context
+	ctx *utils.Context
 }
 
 func NewFile(ctx *utils.Context) *File {
@@ -117,10 +116,7 @@ func (f *File) getS3Key(info Metadata) string {
 // Get a pre-signed temporary URL from S3 for a key
 func (f *File) S3KeyToURL(key string) (string, error) {
 	url := ""
-	svc := s3.New(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("us-west-2"),
-	})))
-	req, _ := svc.GetObjectRequest(&s3.GetObjectInput{
+	req, _ := f.ctx.Store.GetObjectRequest(&s3.GetObjectInput{
 		Bucket: aws.String(f.ctx.Bucket),
 		Key:    aws.String(key),
 	})

@@ -54,7 +54,7 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
 
 	changes = changes[1 : len(changes)-3] // Remove junk lines
 
-	var new, modified, deleted []string
+	var newNow, modified, deleted []string
 
 	for _, line := range changes {
 		col := strings.SplitN(line, " ", 2)
@@ -63,7 +63,7 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
 		path := base + "/" + file
 		last := file[len(file)-1:]
 		if strings.HasPrefix(change, ">f+++++++") {
-			new = append(new, path)
+			newNow = append(newNow, path)
 		} else if strings.HasPrefix(change, ">f") {
 			modified = append(modified, path)
 		} else if strings.HasPrefix(change, "*deleting") && last != "/" {
@@ -71,7 +71,7 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
 			deleted = append(deleted, path)
 		}
 	}
-	return new, modified, deleted
+	return newNow, modified, deleted
 }
 
 func (c *Context) callRsyncFlow(input string) error {
@@ -92,8 +92,8 @@ func (c *Context) callRsyncFlow(input string) error {
 		fmt.Printf("%s, %s", out, err)
 		return err
 	}
-	new, modified, deleted := parseChanges(out, input)
-	fmt.Printf("\nNew from remote: %s", new)
+	newNow, modified, deleted := parseChanges(out, input)
+	fmt.Printf("\nNew from remote: %s", newNow)
 	fmt.Printf("\nModified from remote: %s", modified)
 	fmt.Printf("\nDeleted from remote: %s", deleted)
 
@@ -109,7 +109,7 @@ func (c *Context) callRsyncFlow(input string) error {
 
 	// Process changes
 	fmt.Println("\nGOING TO PROCESS CHANGES")
-	err = c.processChanges(new, modified, tempDir)
+	err = c.processChanges(newNow, modified, tempDir)
 	return err
 }
 

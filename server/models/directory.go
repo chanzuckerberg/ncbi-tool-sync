@@ -3,13 +3,12 @@ package models
 import (
 	"errors"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"ncbi_proj/server/utils"
 )
 
 type Directory struct {
-	ctx   *utils.Context
+	ctx *utils.Context
 }
 
 type PathEntry struct {
@@ -77,13 +76,11 @@ func (d *Directory) GetWithURLs(pathName string) ([]PathUrlEntry, error) {
 
 // Check if a file exists on S3
 func (d *Directory) FileExists(pathName string) (bool, error) {
-	svc := s3.New(session.Must(session.NewSession()),
-		&aws.Config{Region: aws.String("us-west-2")})
 	params := &s3.HeadObjectInput{
 		Bucket: aws.String(d.ctx.Bucket),
 		Key:    aws.String(pathName),
 	}
-	_, err := svc.HeadObject(params)
+	_, err := d.ctx.Store.HeadObject(params)
 	if err != nil {
 		return false, err
 	}
@@ -94,15 +91,13 @@ func (d *Directory) FileExists(pathName string) (bool, error) {
 func (d *Directory) ListObjects(pathName string) ([]*s3.Object, error) {
 	var err error
 
-	pathName = pathName[1:]
-	svc := s3.New(session.Must(session.NewSession()),
-		&aws.Config{Region: aws.String("us-west-2")})
+	pathName = pathName[1:] // Remove leading forward slash
 	params := &s3.ListObjectsInput{
 		Bucket: aws.String(d.ctx.Bucket),
 		Prefix: aws.String(pathName),
 	}
 
-	temp, err := svc.ListObjects(params)
+	temp, err := d.ctx.Store.ListObjects(params)
 	res := temp.Contents
 	return res, err
 }
