@@ -7,8 +7,8 @@ import (
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
-	"os"
 	"time"
+	"github.com/spf13/afero"
 )
 
 // Generate a folder name from the current datetime
@@ -20,7 +20,7 @@ func timeName() string {
 }
 
 // Hash for archiveKey
-func generateHash(origPath string, path string, num int) (string, error) {
+func (c *Context) generateHash(origPath string, path string, num int) (string, error) {
 	// Add a header
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
 	hash := md5.New()
@@ -28,7 +28,7 @@ func generateHash(origPath string, path string, num int) (string, error) {
 
 	// Add the file contents
 	var result string
-	file, err := os.Open(origPath)
+	file, err := c.os.Open(origPath)
 	if err != nil {
 		return result, err
 	}
@@ -65,7 +65,7 @@ func (c *Context) lastVersionNum(file string, includeArchived bool) int {
 }
 
 // Load the configuration file
-func (c *Context) loadConfig() *Context {
+func (c *Context) configure() *Context {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
 		panic(err)
@@ -75,6 +75,8 @@ func (c *Context) loadConfig() *Context {
 	if err != nil {
 		panic(err)
 	}
+
+	c.os = afero.NewOsFs()
 
 	return c
 }

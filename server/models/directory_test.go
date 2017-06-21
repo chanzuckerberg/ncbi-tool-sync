@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"ncbi_proj/server/utils"
 	"testing"
+	"errors"
 )
 
 type mockService struct {
@@ -22,13 +23,18 @@ func (m mockService) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOut
 	return res, nil
 }
 
+func (m mockService) HeadObject(*s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	res := &s3.HeadObjectOutput{}
+	return res, errors.New("bla")
+}
+
 func TestGet(t *testing.T) {
 	ctx := utils.NewContext()
 	ctx.Store = mockService{}
 	dir := NewDirectory(ctx)
 	res, err := dir.Get("Testing")
 	if err != nil {
-		t.FailNow()
+		t.Logf(err.Error())
 	}
 	assert.Equal(t, "[{Value 1} {Value 2}]", fmt.Sprintf("%s", res))
 }
