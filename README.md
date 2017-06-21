@@ -2,6 +2,10 @@
 
 * See planning document: https://docs.google.com/document/d/1y9Y6Q5HgPHT5CfIPCMtkK2gIINtzcTEhdNzEWwqIIw4/edit
 
+* Testing:
+  - To avoid running some of the acceptance tests, run go test with -short, e.g.
+    - ```go test -short ./...```
+
 - Folder structure:
     - server/ (Server component)
       - config.yaml (Config file)

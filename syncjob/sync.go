@@ -42,13 +42,13 @@ func main() {
 
 	// Mount FUSE directory
 	c.MountFuse()
-	defer c.UmountFuse()
+	//defer c.UmountFuse()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Call Rsync flow
-	err = c.callRsyncFlow(c.SourcePath)
+	err = c.callRsyncFlow()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -83,12 +83,12 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
 	return newNow, modified, deleted
 }
 
-func (c *Context) callRsyncFlow(input string) error {
+func (c *Context) callRsyncFlow() error {
 	var err error
 	var cmd string
 
 	// Construct Rsync parameters
-	source := fmt.Sprintf("rsync://%s%s/", c.Server, input)
+	source := fmt.Sprintf("rsync://%s%s/", c.Server, c.SourcePath)
 	tempDir := timeName()
 	template := "rsync -abrzv %s --itemize-changes --delete " +
 		"--size-only --no-motd --exclude='.*' --backup-dir='%s' %s %s"
@@ -101,7 +101,7 @@ func (c *Context) callRsyncFlow(input string) error {
 		printIfErr(out, err)
 		return err
 	}
-	newNow, modified, deleted := parseChanges(out, input)
+	newNow, modified, deleted := parseChanges(out, c.SourcePath)
 	fmt.Printf("\nNew on remote: %s", newNow)
 	fmt.Printf("\nModified on remote: %s", modified)
 	fmt.Printf("\nDeleted on remote: %s", deleted)
