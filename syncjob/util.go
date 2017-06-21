@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"time"
 	"github.com/spf13/afero"
+	"log"
 )
 
 // Generate a folder name from the current datetime
@@ -79,4 +80,11 @@ func (c *Context) configure() *Context {
 	c.os = afero.NewOsFs()
 
 	return c
+}
+
+func printIfErr(out []byte, err error) {
+	if err != nil {
+		log.Println(out)
+		log.Println("ERROR: " + err.Error())
+	}
 }
