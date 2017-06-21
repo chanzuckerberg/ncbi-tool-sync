@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"github.com/spf13/afero"
 )
 
 type Context struct {
 	db         *sql.DB
+	os         afero.Fs
 	Server     string `yaml:"Server"`
 	Port       string `yaml:"Port"`
 	Username   string `yaml:"Username"`
@@ -31,11 +33,21 @@ func init() {
 func main() {
 	var c Context
 	var err error
-	c.loadConfig()
+
+	// Load configuration
+	c.configure()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Mount FUSE directory
+	c.MountFuse()
+	defer c.UmountFuse()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Call Rsync flow
 	err = c.callRsyncFlow(c.SourcePath)
 	if err != nil {
 		log.Fatal(err)
@@ -49,8 +61,7 @@ func callCommand(input string) ([]byte, error) {
 // Parse the Rsync itemized output for new, modified, and deleted files
 func parseChanges(out []byte, base string) ([]string, []string, []string) {
 	changes := strings.Split(string(out[:]), "\n")
-
-	changes = changes[1 : len(changes)-3] // Remove junk lines
+	changes = changes[1 : len(changes)-4] // Remove junk lines
 
 	var newNow, modified, deleted []string
 

@@ -32,6 +32,10 @@ func (d *Directory) Get(pathName string) ([]PathEntry, error) {
 	var err error
 	resp := []PathEntry{}
 
+	if val, _ := d.FileExists(pathName); val {
+		return resp, errors.New("Path points to file, not directory.")
+	}
+
 	// List objects at the path
 	listing, err := d.ListObj(pathName)
 	if err != nil || len(listing) < 1 {

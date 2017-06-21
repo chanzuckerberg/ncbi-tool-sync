@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"os"
 )
 
 func (c *Context) processChanges(new []string, modified []string,
@@ -35,7 +34,7 @@ func (c *Context) processChanges(new []string, modified []string,
 
 	// Delete temp folder after handling files
 	path := fmt.Sprintf("%s/%s", c.LocalPath, tempDir)
-	err = os.RemoveAll(path)
+	err = c.os.RemoveAll(path)
 
 	return err
 }
