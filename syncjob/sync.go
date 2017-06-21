@@ -95,29 +95,30 @@ func (c *Context) callRsyncFlow(input string) error {
 
 	// Dry run
 	cmd = fmt.Sprintf(template, "-n", tempDir, source, c.LocalPath)
-	fmt.Println(cmd)
+	fmt.Println("COMMAND: " + cmd)
 	out, err := callCommand(cmd)
 	if err != nil {
-		fmt.Printf("%s, %s", out, err)
+		printIfErr(out, err)
 		return err
 	}
 	newNow, modified, deleted := parseChanges(out, input)
-	fmt.Printf("\nNew from remote: %s", newNow)
-	fmt.Printf("\nModified from remote: %s", modified)
-	fmt.Printf("\nDeleted from remote: %s", deleted)
+	fmt.Printf("\nNew on remote: %s", newNow)
+	fmt.Printf("\nModified on remote: %s", modified)
+	fmt.Printf("\nDeleted on remote: %s", deleted)
 
 	// Actual run
-	fmt.Println("\nGOING TO START REAL RUN")
+	fmt.Println("\n\nACTUAL RUN:")
 	os.MkdirAll(c.LocalPath, os.ModePerm)
 	cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
 	out, err = callCommand(cmd)
-	fmt.Printf("\n%s%s\n", out, err)
+	//fmt.Printf("\n%s\n", out)
 	if err != nil {
+		printIfErr(out, err)
 		return err
 	}
 
 	// Process changes
-	fmt.Println("\nGOING TO PROCESS CHANGES")
+	fmt.Println("\nPROCESS CHANGES:")
 	err = c.processChanges(newNow, modified, tempDir)
 	return err
 }
