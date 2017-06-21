@@ -1,23 +1,13 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 )
 
 func (c *Context) processChanges(new []string, modified []string,
 	tempDir string) error {
-	// Open db
-	var err error
-	c.db, err = sql.Open("sqlite3",
-		"../versionDB.db")
-	defer c.db.Close()
-	if err != nil {
-		return err
-	}
-
 	// Move replaced or deleted file versions to archive
-	err = c.archiveOldVersions(tempDir)
+	err := c.archiveOldVersions(tempDir)
 	if err != nil {
 		return err
 	}
@@ -68,9 +58,14 @@ func (c *Context) handleNewVersion(file string) error {
 	}
 
 	// Insert into database
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
 	query := fmt.Sprintf("insert into entries(PathName, VersionNum, "+
 		"DateModified) values('%s', %d, '%s')", file, versionNum, modTime)
 	_, err = c.db.Exec(query)
+	tx.Commit()
 
 	return err
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 	"github.com/spf13/afero"
 	"log"
+	"database/sql"
 )
 
 // Generate a folder name from the current datetime
@@ -60,8 +61,9 @@ func (c *Context) lastVersionNum(file string, includeArchived bool) int {
 		return num
 	}
 
-	rows.Next()
-	err = rows.Scan(&num)
+	if rows.Next() {
+		err = rows.Scan(&num)
+	}
 	return num
 }
 
@@ -78,6 +80,12 @@ func (c *Context) configure() *Context {
 	}
 
 	c.os = afero.NewOsFs()
+	c.db, err = sql.Open("sqlite3",
+		"../versionDB.db")
+	defer c.db.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	return c
 }
