@@ -14,5 +14,5 @@ func TestOutput(t *testing.T) {
 	entry := models.Entry{"blast", 5, "2009-09-29T14:24:20Z", ""}
 	w := httptest.NewRecorder()
 	ac.Output(w, entry)
-	assert.Equal(t, `{"Path":"blast","Version":5,"ModTime":"2009-09-29T14:24:20Z","Url":""}`, w.Body.String())
+	assert.Equal(t, `{"Path":"blast","Version":5,"ModTime":"2009-09-29T14:24:20Z"}`, w.Body.String())
 }
