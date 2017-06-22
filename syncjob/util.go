@@ -2,15 +2,15 @@ package main
 
 import (
 	"crypto/md5"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"github.com/spf13/afero"
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
-	"time"
-	"github.com/spf13/afero"
 	"log"
-	"database/sql"
+	"time"
 )
 
 // Generate a folder name from the current datetime

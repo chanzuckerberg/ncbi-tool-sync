@@ -1,13 +1,13 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/stretchr/testify/assert"
 	"ncbi_proj/server/utils"
 	"testing"
-	"errors"
 )
 
 type mockService struct {

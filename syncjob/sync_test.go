@@ -1,14 +1,14 @@
 package main
 
 import (
+	"database/sql"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"io"
+	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
-	"github.com/spf13/afero"
-	"os"
-	"database/sql"
-	"io/ioutil"
 )
 
 type Metadata struct {
@@ -82,15 +82,15 @@ func SetupInitialState(t *testing.T) (Context, error) {
 		t.Errorf(err.Error())
 	}
 	ctx := Context{
-		db: db,
-		os: afero.NewOsFs(),
-		Server: "ftp.ncbi.nih.gov",
-		Port: "21",
-		Username: "anonymous",
-		Password: "test@test.com",
+		db:         db,
+		os:         afero.NewOsFs(),
+		Server:     "ftp.ncbi.nih.gov",
+		Port:       "21",
+		Username:   "anonymous",
+		Password:   "test@test.com",
 		SourcePath: "/blast/demo/igblast",
-		LocalPath: "./testing/blast/demo/igblast",
-		LocalTop: "./testing",
+		LocalPath:  "./testing/blast/demo/igblast",
+		LocalTop:   "./testing",
 	}
 	ctx.os.MkdirAll("testing/blast/demo/igblast", os.ModePerm)
 	cmd := "rsync -abrzv --itemize-changes --delete --size-only --no-motd --exclude='.*' rsync://ftp.ncbi.nlm.nih.gov/blast/demo/igblast/ testing/blast/demo/igblast"

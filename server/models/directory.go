@@ -2,10 +2,10 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"ncbi_proj/server/utils"
-	"fmt"
 )
 
 type Directory struct {
@@ -20,7 +20,7 @@ func NewDirectory(ctx *utils.Context) *Directory {
 
 // Get directory listing paths-only, latest versions
 func (d *Directory) GetLatest(pathName string) ([]Entry, error) {
-  return d.Get(pathName, "", false)
+	return d.Get(pathName, "", false)
 }
 
 // Get directory listing with download URLs, latest versions
@@ -69,7 +69,7 @@ func (d *Directory) Get(pathName string, inputTime string, withURLs bool) ([]Ent
 			entry := Entry{Path: *val.Key, Url: url}
 			resp = append(resp, entry)
 		}
-	} else {  // Archive versions from DB
+	} else { // Archive versions from DB
 		listing, err := d.getAtTimeDb(pathName, inputTime)
 		if err != nil {
 			return resp, err
@@ -84,10 +84,10 @@ func (d *Directory) Get(pathName string, inputTime string, withURLs bool) ([]Ent
 				}
 			}
 			entry := Entry{
-				Path: val.Path,
+				Path:    val.Path,
 				Version: val.Version,
 				ModTime: val.ModTime.String,
-				Url: url,
+				Url:     url,
 			}
 			resp = append(resp, entry)
 		}
@@ -104,16 +104,16 @@ func (d *Directory) getAtTimeDb(pathName string,
 	inputTime string) ([]Metadata, error) {
 	// Query
 	res := []Metadata{}
-	query := fmt.Sprintf("select e.PathName, e.VersionNum, " +
-		"e.DateModified, e.ArchiveKey " +
-		"from entries as e " +
-		"inner join ( " +
-		"select max(VersionNum) VersionNum, PathName " +
-		"from entries " +
-		"where PathName LIKE '%s%%' " +
-		"and DateModified <= datetime('%s') " +
-		"group by PathName ) as max " +
-		"on max.PathName = e.PathName " +
+	query := fmt.Sprintf("select e.PathName, e.VersionNum, "+
+		"e.DateModified, e.ArchiveKey "+
+		"from entries as e "+
+		"inner join ( "+
+		"select max(VersionNum) VersionNum, PathName "+
+		"from entries "+
+		"where PathName LIKE '%s%%' "+
+		"and DateModified <= datetime('%s') "+
+		"group by PathName ) as max "+
+		"on max.PathName = e.PathName "+
 		"and max.VersionNum = e.VersionNum",
 		pathName, inputTime)
 	rows, err := d.ctx.Db.Query(query)
