@@ -4,11 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/spf13/afero"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
-	"github.com/spf13/afero"
 )
 
 type Context struct {
