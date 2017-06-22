@@ -29,10 +29,10 @@ type Metadata struct {
 }
 
 type Entry struct {
-	Path    string
-	Version int
-	ModTime string
-	Url     string
+	Path    string  `json:",omitempty"`
+	Version int     `json:",omitempty"`
+	ModTime string  `json:",omitempty"`
+	Url     string  `json:",omitempty"`
 }
 
 // Get response for a file and version
@@ -179,10 +179,9 @@ func (f *File) GetHistory(pathName string) ([]Entry, error) {
 			return res, err
 		}
 		entry := Entry{
-			md.Path,
-			md.Version,
-			md.ModTime.String,
-			"",
+			Path: md.Path,
+			Version: md.Version,
+			ModTime: md.ModTime.String,
 		}
 		res = append(res, entry)
 	}

@@ -32,9 +32,9 @@ func TestGet(t *testing.T) {
 	ctx := utils.NewContext()
 	ctx.Store = mockService{}
 	dir := NewDirectory(ctx)
-	res, err := dir.Get("Testing")
+	res, err := dir.GetLatest("Testing")
 	if err != nil {
 		t.Logf(err.Error())
 	}
-	assert.Equal(t, "[{Value 1} {Value 2}]", fmt.Sprintf("%s", res))
+	assert.Equal(t, "[{Value 1 %!s(int=0)  } {Value 2 %!s(int=0)  }]", fmt.Sprintf("%s", res))
 }
