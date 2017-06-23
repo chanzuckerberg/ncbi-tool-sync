@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"time"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // Generates a folder name from the current datetime.
@@ -62,6 +63,7 @@ func (c *Context) lastVersionNum(file string, inclArchive bool) int {
 	rows, err := c.db.Query(query)
 	defer rows.Close()
 	if err != nil {
+		log.Println("Error: " + err.Error())
 		return num
 	}
 
@@ -84,9 +86,12 @@ func (c *Context) configure() *Context {
 	}
 
 	c.os = afero.NewOsFs()
-	c.db, err = sql.Open("sqlite3",
-		"../versionDB.db")
-	defer c.db.Close()
+	c.db, err = sql.Open("mysql",
+		"tool:MrnUaj6Epq2@/versions")
+	if err != nil {
+		log.Fatal(err)
+	}
+	c.SetupDb()
 	if err != nil {
 		log.Fatal(err)
 	}
