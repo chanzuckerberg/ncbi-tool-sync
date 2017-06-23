@@ -73,10 +73,10 @@ func (f *File) entryFromMetadata(info Metadata) (Entry, error) {
 		return nil, err
 	}
 	return Entry{
-	info.Path,
-	info.Version,
-	info.ModTime.String,
-	url}, err
+		info.Path,
+		info.Version,
+		info.ModTime.String,
+		url}, err
 }
 
 // Gets metadata entry based on file name and given time.

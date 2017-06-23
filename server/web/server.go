@@ -41,7 +41,7 @@ func main() {
 	router.NotFoundHandler = http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "Page not found.")
-	})
+		})
 
 	// Start server
 	log.Println("Starting listener...")

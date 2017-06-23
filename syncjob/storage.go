@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"log"
+	"os"
 )
 
 // Mounts the virtual directory. Uses goofys tool to mount S3 as a
