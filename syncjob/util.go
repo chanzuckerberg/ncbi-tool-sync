@@ -57,7 +57,7 @@ func (c *Context) lastVersionNum(file string, inclArchive bool) int {
 		archive = "and ArchiveKey is null "
 	}
 
-	query := fmt.Sprintf("select VersionNum from entries " +
+	query := fmt.Sprintf("select VersionNum from entries "+
 		"where PathName='%s' %sorder by VersionNum desc", file, archive)
 	rows, err := c.db.Query(query)
 	defer rows.Close()

@@ -58,7 +58,7 @@ func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 
 		// Update the old entry with archiveKey blob
 		query := fmt.Sprintf(
-			"update entries set ArchiveKey='%s' where " +
+			"update entries set ArchiveKey='%s' where "+
 				"PathName='%s' and VersionNum=%d;", key, newPath, num)
 		_, err = c.db.Exec(query)
 
