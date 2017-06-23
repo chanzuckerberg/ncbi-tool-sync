@@ -41,7 +41,7 @@ func (f *File) GetVersion(path string,
 	num, _ := strconv.Atoi(version)
 	info, err := f.entryFromVersion(path, num)
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
 	return f.entryFromMetadata(info)
 }
@@ -50,7 +50,7 @@ func (f *File) GetVersion(path string,
 func (f *File) GetLatest(path string) (Entry, error) {
 	info, err := f.entryFromVersion(path, 0)
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
 	return f.entryFromMetadata(info)
 }
@@ -60,7 +60,7 @@ func (f *File) GetAtTime(path string,
 	inputTime string) (Entry, error) {
 	info, err := f.versionFromTime(path, inputTime)
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
 	return f.entryFromMetadata(info)
 }
@@ -70,7 +70,7 @@ func (f *File) entryFromMetadata(info Metadata) (Entry, error) {
 	key := f.getS3Key(info)
 	url, err := f.keyToURL(key)
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
 	return Entry{
 		info.Path,

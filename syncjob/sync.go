@@ -37,6 +37,7 @@ func main() {
 
 	// Load configuration
 	c.configure()
+	defer c.db.Close()
 
 	// Mount FUSE directory
 	c.UnmountFuse()
@@ -109,12 +110,12 @@ func (c *Context) callRsyncFlow() error {
 		return err
 	}
 	newNow, modified, deleted := parseChanges(out, c.SourcePath)
-	log.Printf("\nNew on remote: %s", newNow)
-	log.Printf("\nModified on remote: %s", modified)
-	log.Printf("\nDeleted on remote: %s", deleted)
+	log.Printf("New on remote: %s", newNow)
+	log.Printf("Modified on remote: %s", modified)
+	log.Printf("Deleted on remote: %s", deleted)
 
 	// Actual run
-	log.Println("\n\nActual sync run:")
+	log.Println("Actual sync run...")
 	os.MkdirAll(c.LocalPath, os.ModePerm)
 	cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
 	out, err = callCommand(cmd)
@@ -124,7 +125,7 @@ func (c *Context) callRsyncFlow() error {
 	}
 
 	// Process changes
-	log.Println("\nProcessing changes:")
+	log.Println("Processing changes...")
 	err = c.processChanges(newNow, modified, tempDir)
 	return err
 }
