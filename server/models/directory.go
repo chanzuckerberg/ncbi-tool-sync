@@ -18,20 +18,18 @@ func NewDirectory(ctx *utils.Context) *Directory {
 	}
 }
 
-func (d *Directory) GetLatest(pathName string, output string) ([]Entry, error) {
+func (d *Directory) GetLatest(pathName string,
+	output string) ([]Entry, error) {
 	// Setup
 	var err error
 	resp := []Entry{}
 	file := NewFile(d.ctx)
 	url := ""
-	if val, _ := d.FileExists(pathName); val {
-		return resp, errors.New("Path does not point to directory.")
-	}
 
 	// Get listing from S3
 	listing, err := d.ListObj(pathName)
-	if err != nil || len(listing) < 1 {
-		return resp, errors.New("Directory does not exist")
+	if err != nil || len(listing) == 0 {
+		return resp, errors.New("Empty or non-existent directory.")
 	}
 	for _, val := range listing {
 		key := *val.Key
@@ -51,20 +49,18 @@ func (d *Directory) GetLatest(pathName string, output string) ([]Entry, error) {
 	return resp, err
 }
 
-func (d *Directory) GetPast(pathName string, inputTime string, output string) ([]Entry, error) {
+func (d *Directory) GetPast(pathName string, inputTime string,
+	output string) ([]Entry, error) {
 	// Setup
 	var err error
 	resp := []Entry{}
 	file := NewFile(d.ctx)
 	url := ""
-	if val, _ := d.FileExists(pathName); val {
-		return resp, errors.New("Path does not point to directory.")
-	}
 
 	// Get archive versions from DB
 	listing, err := d.getAtTimeDb(pathName, inputTime)
-	if err != nil {
-		return resp, err
+	if err != nil || len(listing) == 0 {
+		return resp, errors.New("Empty or non-existent directory.")
 	}
 
 	for _, val := range listing {
@@ -149,7 +145,13 @@ func (d *Directory) ListObj(pathName string) ([]*s3.Object, error) {
 		Prefix: aws.String(pathName),
 	}
 
-	temp, err := d.ctx.Store.ListObjects(params)
-	res := temp.Contents
-	return res, err
+	res, err := d.ctx.Store.ListObjects(params)
+	pruned := []*s3.Object{}
+	for _, val := range res.Contents {
+		if int(*val.Size) > 0 { // Don't include the folder itself
+			pruned = append(pruned, val)
+		}
+	}
+
+	return pruned, err
 }
