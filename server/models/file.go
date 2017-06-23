@@ -35,69 +35,63 @@ type Entry struct {
 	Url     string `json:",omitempty"`
 }
 
-// Get response for a file and version
-func (f *File) GetVersion(pathName string,
-	versionNum string) (Entry, error) {
-	return f.Get(pathName, "versionNum", versionNum)
+// Gets response for a file and version.
+func (f *File) GetVersion(path string,
+	version string) (Entry, error) {
+	num, _ := strconv.Atoi(version)
+	info, err := f.entryFromVersion(path, num)
+	if err != nil {
+		return nil, err
+	}
+	return f.entryFromMetadata(info)
 }
 
-// Get response for file, latest version
-func (f *File) GetLatest(pathName string) (Entry, error) {
-	return f.Get(pathName, "latest", "")
+// Gets response for a file, latest version.
+func (f *File) GetLatest(path string) (Entry, error) {
+	info, err := f.entryFromVersion(path, 0)
+	if err != nil {
+		return nil, err
+	}
+	return f.entryFromMetadata(info)
 }
 
-// Get the file as it existed at/before the given time
-func (f *File) GetAtTime(pathName string,
+// Gets the file version at/just before the given time.
+func (f *File) GetAtTime(path string,
 	inputTime string) (Entry, error) {
-	return f.Get(pathName, "inputTime", inputTime)
+	info, err := f.versionFromTime(path, inputTime)
+	if err != nil {
+		return nil, err
+	}
+	return f.entryFromMetadata(info)
 }
 
-// General get handler
-func (f *File) Get(pathName string, attribute string,
-	val string) (Entry, error) {
-	key := pathName
-	info := Metadata{}
-	res := Entry{}
-	var err error
-
-	switch attribute {
-	case "latest":
-		info, err = f.entryFromVersion(pathName, 0)
-	case "versionNum":
-		num, _ := strconv.Atoi(val)
-		info, err = f.entryFromVersion(pathName, num)
-	case "inputTime":
-		info, err = f.entryFromTime(pathName, val)
-	default:
-		return res, err
-	}
+// Gets an Entry for a file from the metadata information.
+func (f *File) entryFromMetadata(info Metadata) (Entry, error) {
+	key := f.getS3Key(info)
+	url, err := f.keyToURL(key)
 	if err != nil {
-		return res, err
-	}
-
-	key = f.getS3Key(info)
-	url, err := f.S3KeyToURL(key)
-	if err != nil {
-		return res, err
+		return nil, err
 	}
 	return Entry{
-		info.Path,
-		info.Version,
-		info.ModTime.String,
-		url}, err
+	info.Path,
+	info.Version,
+	info.ModTime.String,
+	url}, err
 }
 
-// Get metadata based on name and given time
-func (f *File) entryFromTime(pathName string,
+// Gets metadata entry based on file name and given time.
+// Finds the version of the file just before the given time, if any.
+func (f *File) versionFromTime(path string,
 	inputTime string) (Metadata, error) {
 	// Query the database
 	query := fmt.Sprintf("select * from entries where "+
 		"PathName='%s' and DateModified <= datetime('%s') order "+
-		"by VersionNum desc", pathName, inputTime)
+		"by VersionNum desc", path, inputTime)
 	return f.topFromQuery(query)
 }
 
-// Get column info from the top db result of the query
+// Gets column info from the top db result of the query.
+// Runs the query and return the columns of just the first result.
 func (f *File) topFromQuery(query string) (Metadata, error) {
 	md := Metadata{}
 	row, err := f.ctx.Db.Query(query)
@@ -107,63 +101,61 @@ func (f *File) topFromQuery(query string) (Metadata, error) {
 	}
 
 	// Process results
-	present := row.Next()
-	if !present {
+	if !row.Next() {
 		return md, errors.New("No results for this query.")
 	}
 	err = row.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	return md, err
 }
 
-// Get info about the file from the db
-func (f *File) entryFromVersion(pathName string,
-	versionNum int) (Metadata, error) {
+// Gets the metadata of the specified or latest version of the file.
+func (f *File) entryFromVersion(path string,
+	version int) (Metadata, error) {
 	query := ""
-	if versionNum > 0 {
+	if version > 0 {
 		// Get specified version
 		query = fmt.Sprintf("select * from entries "+
-			"where PathName='%s' and VersionNum=%d", pathName, versionNum)
+			"where PathName='%s' and VersionNum=%d", path, version)
 	} else {
 		// Get latest version
 		query = fmt.Sprintf("select * from entries "+
-			"where PathName='%s' order by VersionNum desc", pathName)
+			"where PathName='%s' order by VersionNum desc", path)
 	}
 	return f.topFromQuery(query)
 }
 
-// Look in database for proper key for specific version
+// Gets the S3 key for the given entry.
 func (f *File) getS3Key(info Metadata) string {
-	res := ""
 	if !info.ArchiveKey.Valid {
 		// VersionEntry is there but not archived. Just serve the latest.
 		return info.Path
 	} else {
-		// Success
+		// Make the archive folder path
 		archiveKey := info.ArchiveKey.String
-		res = fmt.Sprintf("/archive/%s", archiveKey)
+		return fmt.Sprintf("/archive/%s", archiveKey)
 	}
-	return res
+	return ""
 }
 
-// Get a pre-signed temporary URL from S3 for a key
-func (f *File) S3KeyToURL(key string) (string, error) {
-	url := ""
+// Gets a pre-signed temporary URL from S3 for a key.
+// Serves back link for client downloads.
+func (f *File) keyToURL(key string) (string, error) {
 	req, _ := f.ctx.Store.GetObjectRequest(&s3.GetObjectInput{
 		Bucket: aws.String(f.ctx.Bucket),
 		Key:    aws.String(key),
 	})
-	url, err := req.Presign(1 * time.Hour)
-	return url, err
+	return req.Presign(1 * time.Hour)
 }
 
-// Get response for the revision history of a file
-func (f *File) GetHistory(pathName string) ([]Entry, error) {
+// Gets the revision history of a file.
+// Gets list of versions and modTimes.
+func (f *File) GetHistory(path string) ([]Entry, error) {
 	var err error
 	res := []Entry{}
 
 	// Query the database
 	query := fmt.Sprintf("select * from entries "+
-		"where PathName='%s' order by VersionNum desc", pathName)
+		"where PathName='%s' order by VersionNum desc", path)
 	rows, err := f.ctx.Db.Query(query)
 	defer rows.Close()
 	if err != nil {
@@ -185,6 +177,5 @@ func (f *File) GetHistory(pathName string) ([]Entry, error) {
 		}
 		res = append(res, entry)
 	}
-
 	return res, err
 }

@@ -30,18 +30,17 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
+// Entry point for the entire sync workflow with remote server.
 func main() {
 	var c Context
 	var err error
 
 	// Load configuration
 	c.configure()
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	// Mount FUSE directory
-	c.MountFuse()
+	c.UnmountFuse()
+	err = c.MountFuse()
 	//defer c.UmountFuse()
 	if err != nil {
 		log.Fatal(err)
@@ -54,12 +53,16 @@ func main() {
 	}
 }
 
+// Executes a shell command on the local machine.
 func callCommand(input string) ([]byte, error) {
 	return exec.Command("sh", "-c", input).Output()
 }
 
-// Parse the Rsync itemized output for new, modified, and deleted files
-func parseChanges(out []byte, base string) ([]string, []string, []string) {
+// Parses the Rsync itemized output for new, modified, and deleted
+// files. Follows the Rsync itemized changes syntax that specify
+// exactly which changes occurred or will occur.
+func parseChanges(out []byte, base string) ([]string,
+	[]string, []string) {
 	changes := strings.Split(string(out[:]), "\n")
 	changes = changes[1 : len(changes)-4] // Remove junk lines
 
@@ -75,7 +78,8 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
 			newNow = append(newNow, path)
 		} else if strings.HasPrefix(change, ">f") {
 			modified = append(modified, path)
-		} else if strings.HasPrefix(change, "*deleting") && last != "/" {
+		} else if strings.HasPrefix(change, "*deleting") &&
+			last != "/" {
 			// Exclude folders
 			deleted = append(deleted, path)
 		}
@@ -83,42 +87,44 @@ func parseChanges(out []byte, base string) ([]string, []string, []string) {
 	return newNow, modified, deleted
 }
 
+// Calls the Rsync workflow. Executes a dry run first for processing.
+// Then runs the real sync. Finally processes the changes.
 func (c *Context) callRsyncFlow() error {
 	var err error
 	var cmd string
 
 	// Construct Rsync parameters
-	source := fmt.Sprintf("rsync://%s%s/", c.Server, c.SourcePath)
+	source := fmt.Sprintf("rsync://%s%s/", c.Server,
+		c.SourcePath)
 	tempDir := timeName()
 	template := "rsync -abrzv %s --itemize-changes --delete " +
 		"--size-only --no-motd --exclude='.*' --backup-dir='%s' %s %s"
 
 	// Dry run
 	cmd = fmt.Sprintf(template, "-n", tempDir, source, c.LocalPath)
-	fmt.Println("COMMAND: " + cmd)
+	log.Println("Command: " + cmd)
 	out, err := callCommand(cmd)
 	if err != nil {
-		printIfErr(out, err)
+		log.Fatal(out, err)
 		return err
 	}
 	newNow, modified, deleted := parseChanges(out, c.SourcePath)
-	fmt.Printf("\nNew on remote: %s", newNow)
-	fmt.Printf("\nModified on remote: %s", modified)
-	fmt.Printf("\nDeleted on remote: %s", deleted)
+	log.Printf("\nNew on remote: %s", newNow)
+	log.Printf("\nModified on remote: %s", modified)
+	log.Printf("\nDeleted on remote: %s", deleted)
 
 	// Actual run
-	fmt.Println("\n\nACTUAL RUN:")
+	log.Println("\n\nActual sync run:")
 	os.MkdirAll(c.LocalPath, os.ModePerm)
 	cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
 	out, err = callCommand(cmd)
-	//fmt.Printf("\n%s\n", out)
 	if err != nil {
-		printIfErr(out, err)
+		log.Fatal(out, err)
 		return err
 	}
 
 	// Process changes
-	fmt.Println("\nPROCESS CHANGES:")
+	log.Println("\nProcessing changes:")
 	err = c.processChanges(newNow, modified, tempDir)
 	return err
 }

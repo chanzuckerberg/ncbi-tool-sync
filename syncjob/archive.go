@@ -7,11 +7,14 @@ import (
 	"strings"
 )
 
+// Archives old versions of modified or deleted files in the backup
+// folder.
 func (c *Context) archiveOldVersions(tempDir string) error {
 	var err error
 
-	// Return if rsync didn't make a modified folder
-	_, err = c.os.Stat(fmt.Sprintf("%s/%s", c.LocalPath, tempDir))
+	// Just return if rsync didn't make a modified folder
+	_, err = c.os.Stat(fmt.Sprintf("%s/%s", c.LocalPath,
+		tempDir))
 	if err != nil {
 		return nil
 	}
@@ -21,14 +24,17 @@ func (c *Context) archiveOldVersions(tempDir string) error {
 	c.os.MkdirAll(c.LocalTop+"/archive", os.ModePerm)
 
 	// Walk through each modified file
-	if _, err := c.os.Stat(dest); err == nil {
+	if _, err = c.os.Stat(dest); err == nil {
 		err = filepath.Walk(dest, c.archiveFile(tempDir))
+		if err != nil {
+			return err
+		}
 	}
-
 	return err
 }
 
-// Handle each changed file
+// Handles each changed file. Moves files to archive folder, records
+// ArchiveKey blob from a hash in the db, and renames files.
 func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 	return func(origPath string, f os.FileInfo, err error) error {
 		if f.IsDir() {
@@ -51,8 +57,9 @@ func (c *Context) archiveFile(tempDir string) filepath.WalkFunc {
 		err = c.os.Rename(origPath, dest)
 
 		// Update the old entry with archiveKey blob
-		query := fmt.Sprintf("update entries set ArchiveKey='%s' "+
-			"where PathName='%s' and VersionNum=%d;", key, newPath, num)
+		query := fmt.Sprintf(
+			"update entries set ArchiveKey='%s' where " +
+				"PathName='%s' and VersionNum=%d;", key, newPath, num)
 		_, err = c.db.Exec(query)
 
 		return err

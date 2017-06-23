@@ -10,12 +10,14 @@ type ApplicationController struct {
 	ctx *utils.Context
 }
 
-func NewApplicationController(ctx *utils.Context) *ApplicationController {
+func NewApplicationController(
+	ctx *utils.Context) *ApplicationController {
 	return &ApplicationController{ctx: ctx}
 }
 
-func (ac *ApplicationController) InternalError(w http.ResponseWriter, err error) {
-	http.Error(w, "ERROR: "+err.Error(), http.StatusInternalServerError)
+func (ac *ApplicationController) InternalError(w http.ResponseWriter,
+	err error) {
+	http.Error(w, "Error: "+err.Error(), http.StatusInternalServerError)
 }
 
 func (ac *ApplicationController) BadRequest(w http.ResponseWriter) {
