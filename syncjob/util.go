@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Generate a folder name from the current datetime
+// Generates a folder name from the current datetime.
 func timeName() string {
 	t := time.Now()
 	result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
@@ -21,8 +21,10 @@ func timeName() string {
 	return result
 }
 
-// Hash for archiveKey
-func (c *Context) generateHash(origPath string, path string, num int) (string, error) {
+// Generates a hash for the file based on the name, version number,
+// and actual file contents.
+func (c *Context) generateHash(origPath string, path string,
+	num int) (string, error) {
 	// Add a header
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
 	hash := md5.New()
@@ -45,16 +47,18 @@ func (c *Context) generateHash(origPath string, path string, num int) (string, e
 	return result, nil
 }
 
-// Find the latest version number of the file
-func (c *Context) lastVersionNum(file string, includeArchived bool) int {
+// Finds the latest version number of the file. Queries the database
+// for the latest version of the file.
+func (c *Context) lastVersionNum(file string, inclArchive bool) int {
 	var num int = -1
 	var archive string = ""
-	if !includeArchived { // Specify not archived entries
+	if !inclArchive {
+		// Specify not to include archived entries
 		archive = "and ArchiveKey is null "
 	}
 
-	query := fmt.Sprintf("select VersionNum from entries where "+
-		"PathName='%s' %sorder by VersionNum desc", file, archive)
+	query := fmt.Sprintf("select VersionNum from entries " +
+		"where PathName='%s' %sorder by VersionNum desc", file, archive)
 	rows, err := c.db.Query(query)
 	defer rows.Close()
 	if err != nil {
@@ -67,7 +71,7 @@ func (c *Context) lastVersionNum(file string, includeArchived bool) int {
 	return num
 }
 
-// Load the configuration file
+// Loads the configuration file and starts db connection.
 func (c *Context) configure() *Context {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
@@ -86,13 +90,10 @@ func (c *Context) configure() *Context {
 	if err != nil {
 		log.Fatal(err)
 	}
+	err = c.db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	return c
-}
-
-func printIfErr(out []byte, err error) {
-	if err != nil {
-		log.Println(out)
-		log.Println("ERROR: " + err.Error())
-	}
 }

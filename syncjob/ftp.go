@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Get the date time modified from the FTP server
+// Gets the date time modified of a file from the FTP server.
 func (c *Context) getServerTime(input string) (string, error) {
 	folder := filepath.Dir(input)
 	file := filepath.Base(input)
@@ -29,7 +29,7 @@ func (c *Context) getServerTime(input string) (string, error) {
 	return "", err
 }
 
-// Connect to the FTP server
+// Connects to the FTP server and returns the client.
 func (c *Context) connectToServer() (*ftp.ServerConn, error) {
 	addr := c.Server + ":" + c.Port
 	client, err := ftp.Dial(addr)

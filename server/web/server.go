@@ -27,17 +27,26 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	err = ctx.Db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// Start server
+	// Routing
 	router := mux.NewRouter()
 	fileController := controllers.NewFileController(ctx)
 	fileController.Register(router)
 	directoryController := controllers.NewDirectoryController(ctx)
 	directoryController.Register(router)
+	router.NotFoundHandler = http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, "Page not found.")
+	})
 
-	fmt.Println("STARTING LISTENER")
+	// Start server
+	log.Println("Starting listener...")
 	err = http.ListenAndServe(":8000", router)
-
-	fmt.Println("ERROR")
-	fmt.Println(err)
+	if err != nil {
+		log.Fatal("Error in server.")
+	}
 }

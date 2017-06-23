@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 )
 
+// General state variables for the server
 type Context struct {
 	Db         *sql.DB
 	Server     string `yaml:"Server"`
@@ -30,7 +31,7 @@ func NewContext() *Context {
 	return &ctx
 }
 
-// Load the configuration file
+// Loads the configuration file.
 func (ctx *Context) loadConfig() (*Context, error) {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
@@ -45,6 +46,7 @@ func (ctx *Context) loadConfig() (*Context, error) {
 	return ctx, err
 }
 
+// Creates a new AWS client session.
 func (ctx *Context) connectAWS() *Context {
 	ctx.Store = s3.New(session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-west-2"),

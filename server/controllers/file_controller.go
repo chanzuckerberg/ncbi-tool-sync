@@ -22,7 +22,8 @@ func (fc *FileController) Register(router *mux.Router) {
 	router.HandleFunc("/file", fc.Show)
 }
 
-func (fc *FileController) Show(w http.ResponseWriter, r *http.Request) {
+func (fc *FileController) Show(w http.ResponseWriter,
+	r *http.Request) {
 	// Setup
 	file := models.NewFile(fc.ctx)
 	op := r.URL.Query().Get("op")

@@ -4,6 +4,10 @@ import (
 	"fmt"
 )
 
+// Processes changes for new, modified, and deleted files. Modified
+// and deleted files are processed by archiveOldVersions in the temp
+// directory. New and modified files have new versions to be added to
+// the db. Temp folder is deleted after handling.
 func (c *Context) processChanges(new []string, modified []string,
 	tempDir string) error {
 	// Move replaced or deleted file versions to archive
@@ -29,7 +33,7 @@ func (c *Context) processChanges(new []string, modified []string,
 	return err
 }
 
-// Handle a list of files with new versions
+// Handles a list of files with new versions.
 func (c *Context) handleNewVersions(files []string) error {
 	for _, file := range files {
 		err := c.handleNewVersion(file)
@@ -40,7 +44,10 @@ func (c *Context) handleNewVersions(files []string) error {
 	return nil
 }
 
-// Handle one file with a new version on disk
+// Handles one file with a new version on disk. Finds the proper
+// version number for this new entry. Gets the datetime modified from
+// the FTP server as a workaround for the lack of date modified times
+// after syncing to S3. Adds the new entry into the db.
 func (c *Context) handleNewVersion(file string) error {
 	var err error
 

@@ -12,7 +12,8 @@ type DirectoryController struct {
 	ctx *utils.Context
 }
 
-func NewDirectoryController(ctx *utils.Context) *DirectoryController {
+func NewDirectoryController(
+	ctx *utils.Context) *DirectoryController {
 	return &DirectoryController{
 		ctx: ctx,
 	}
@@ -22,7 +23,8 @@ func (dc *DirectoryController) Register(router *mux.Router) {
 	router.HandleFunc("/directory", dc.Show)
 }
 
-func (dc *DirectoryController) Show(w http.ResponseWriter, r *http.Request) {
+func (dc *DirectoryController) Show(w http.ResponseWriter,
+	r *http.Request) {
 	// Setup
 	dir := models.NewDirectory(dc.ctx)
 	inputTime := r.URL.Query().Get("input-time")

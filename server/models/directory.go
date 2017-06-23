@@ -18,6 +18,7 @@ func NewDirectory(ctx *utils.Context) *Directory {
 	}
 }
 
+// Gets the latest directory listing for the path.
 func (d *Directory) GetLatest(pathName string,
 	output string) ([]Entry, error) {
 	// Setup
@@ -31,10 +32,12 @@ func (d *Directory) GetLatest(pathName string,
 	if err != nil || len(listing) == 0 {
 		return resp, errors.New("Empty or non-existent directory.")
 	}
+
+	// Process results
 	for _, val := range listing {
 		key := *val.Key
 		if output == "with-URLs" {
-			url, err = file.S3KeyToURL(key)
+			url, err = file.keyToURL(key)
 			if err != nil {
 				return resp, err
 			}
@@ -49,6 +52,7 @@ func (d *Directory) GetLatest(pathName string,
 	return resp, err
 }
 
+// Gets approximate directory listing at a point in time from the Db.
 func (d *Directory) GetPast(pathName string, inputTime string,
 	output string) ([]Entry, error) {
 	// Setup
@@ -63,10 +67,11 @@ func (d *Directory) GetPast(pathName string, inputTime string,
 		return resp, errors.New("Empty or non-existent directory.")
 	}
 
+	// Process results
 	for _, val := range listing {
 		key := file.getS3Key(val)
 		if output == "with-URLs" {
-			url, err = file.S3KeyToURL(key)
+			url, err = file.keyToURL(key)
 			if err != nil {
 				return resp, err
 			}
@@ -86,7 +91,8 @@ func (d *Directory) GetPast(pathName string, inputTime string,
 	return resp, err
 }
 
-// Get data from rows in database
+// Gets the approximate directory state at a given time. Finds the
+// most recent version of each file in a path before a given date.
 func (d *Directory) getAtTimeDb(pathName string,
 	inputTime string) ([]Metadata, error) {
 	// Query
@@ -106,8 +112,7 @@ func (d *Directory) getAtTimeDb(pathName string,
 	rows, err := d.ctx.Db.Query(query)
 	defer rows.Close()
 	if err != nil {
-		fmt.Println("No results?")
-		return res, err
+		return res, errors.New("No results found.")
 	}
 
 	// Process results
@@ -122,36 +127,25 @@ func (d *Directory) getAtTimeDb(pathName string,
 	return res, err
 }
 
-// Check if a file exists on S3
-func (d *Directory) FileExists(pathName string) (bool, error) {
-	params := &s3.HeadObjectInput{
-		Bucket: aws.String(d.ctx.Bucket),
-		Key:    aws.String(pathName),
-	}
-	_, err := d.ctx.Store.HeadObject(params)
-	if err != nil {
-		return false, err
-	}
-	return true, err
-}
-
-// List objects with a given prefix in S3
+// Lists objects with a given prefix in S3.
+// Lists the files in a S3 folder path.
 func (d *Directory) ListObj(pathName string) ([]*s3.Object, error) {
 	var err error
-
-	pathName = pathName[1:] // Remove leading forward slash
+	// Remove leading forward slash
+	pathName = pathName[1:]
 	params := &s3.ListObjectsInput{
 		Bucket: aws.String(d.ctx.Bucket),
 		Prefix: aws.String(pathName),
 	}
 
 	res, err := d.ctx.Store.ListObjects(params)
+
+	// Filter out zero size objects to ignore the 'folder' objects
 	pruned := []*s3.Object{}
 	for _, val := range res.Contents {
-		if int(*val.Size) > 0 { // Don't include the folder itself
+		if int(*val.Size) > 0 {
 			pruned = append(pruned, val)
 		}
 	}
-
 	return pruned, err
 }
