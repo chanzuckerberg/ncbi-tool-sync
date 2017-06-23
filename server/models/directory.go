@@ -18,29 +18,7 @@ func NewDirectory(ctx *utils.Context) *Directory {
 	}
 }
 
-// Get directory listing paths-only, latest versions
-func (d *Directory) GetLatest(pathName string) ([]Entry, error) {
-	return d.Get(pathName, "", false)
-}
-
-// Get directory listing with download URLs, latest versions
-func (d *Directory) GetWithURLs(pathName string) ([]Entry, error) {
-	return d.Get(pathName, "", true)
-}
-
-// Get directory at a point in time
-func (d *Directory) GetAtTime(pathName string, inputTime string) ([]Entry, error) {
-	return d.Get(pathName, inputTime, false)
-}
-
-// Get directory at a point in time with download URLs
-func (d *Directory) GetAtTimeWithURLs(pathName string, inputTime string) ([]Entry, error) {
-	return d.Get(pathName, inputTime, true)
-}
-
-func (d *Directory) Get(pathName string, inputTime string, withURLs bool) ([]Entry, error) {
-	// TO BE REFACTORED
-
+func (d *Directory) GetLatest(pathName string, output string) ([]Entry, error) {
 	// Setup
 	var err error
 	resp := []Entry{}
@@ -50,51 +28,64 @@ func (d *Directory) Get(pathName string, inputTime string, withURLs bool) ([]Ent
 		return resp, errors.New("Path does not point to directory.")
 	}
 
-	// Latest files from S3
-	if inputTime == "" {
-		// List objects at the path
-		fmt.Println(pathName)
-		listing, err := d.ListObj(pathName)
-		if err != nil || len(listing) < 1 {
-			return resp, errors.New("Directory does not exist")
-		}
-		for _, val := range listing {
-			key := *val.Key
-			if withURLs {
-				url, err = file.S3KeyToURL(key)
-				if err != nil {
-					return resp, err
-				}
+	// Get listing from S3
+	listing, err := d.ListObj(pathName)
+	if err != nil || len(listing) < 1 {
+		return resp, errors.New("Directory does not exist")
+	}
+	for _, val := range listing {
+		key := *val.Key
+		if output == "with-URLs" {
+			url, err = file.S3KeyToURL(key)
+			if err != nil {
+				return resp, err
 			}
-			entry := Entry{Path: *val.Key, Url: url}
-			resp = append(resp, entry)
 		}
-	} else { // Archive versions from DB
-		listing, err := d.getAtTimeDb(pathName, inputTime)
-		if err != nil {
-			return resp, err
-		}
-
-		for _, val := range listing {
-			key := file.getS3Key(val)
-			if withURLs {
-				url, err = file.S3KeyToURL(key)
-				if err != nil {
-					return resp, err
-				}
-			}
-			entry := Entry{
-				Path:    val.Path,
-				Version: val.Version,
-				ModTime: val.ModTime.String,
-				Url:     url,
-			}
-			resp = append(resp, entry)
-		}
+		entry := Entry{Path: *val.Key, Url: url}
+		resp = append(resp, entry)
 	}
 
 	if len(resp) == 0 {
-		return resp, errors.New("No results.")
+		err = errors.New("No results.")
+	}
+	return resp, err
+}
+
+func (d *Directory) GetPast(pathName string, inputTime string, output string) ([]Entry, error) {
+	// Setup
+	var err error
+	resp := []Entry{}
+	file := NewFile(d.ctx)
+	url := ""
+	if val, _ := d.FileExists(pathName); val {
+		return resp, errors.New("Path does not point to directory.")
+	}
+
+	// Get archive versions from DB
+	listing, err := d.getAtTimeDb(pathName, inputTime)
+	if err != nil {
+		return resp, err
+	}
+
+	for _, val := range listing {
+		key := file.getS3Key(val)
+		if output == "with-URLs" {
+			url, err = file.S3KeyToURL(key)
+			if err != nil {
+				return resp, err
+			}
+		}
+		entry := Entry{
+			Path:    val.Path,
+			Version: val.Version,
+			ModTime: val.ModTime.String,
+			Url:     url,
+		}
+		resp = append(resp, entry)
+	}
+
+	if len(resp) == 0 {
+		err = errors.New("No results.")
 	}
 	return resp, err
 }
