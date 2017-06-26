@@ -6,25 +6,17 @@
   - To avoid running some of the acceptance tests, run go test with -short, e.g.
     - ```go test -short ./...```
 
-- Folder structure:
-    - server/ (Server component)
-      - config.yaml (Config file)
-      - models/
-      - controllers/
-      - utils/
-      - web/
-    - syncjob/ (Rsync-based synchronization tool)
-        - config.yaml (Config file)
-      - sync.go
-        - Actual synchronization step
-      - post_process.go
-        - Processing new, modified, and deleted files
-      - archive.go
-        - Archiving modified and deleted files
-      - ftp.go
-        - FTP utility functions
-      - storage.go
-        - Storage utility functions
-      - util.go
-    - cliclient/ (Command line client)
-    - remote/ (Folder mount point for AWS S3 with goofys (FUSE))
+- Folder structure for Sync component:
+  - config.yaml (Config file)
+  - sync.go
+    - Actual synchronization step
+  - post_process.go
+    - Processing new, modified, and deleted files
+  - archive.go
+    - Archiving modified and deleted files
+  - ftp.go
+    - FTP utility functions
+  - storage.go
+    - Storage utility functions
+  - util.go
+  - remote/ (Folder mount point for AWS S3 with goofys (FUSE))
