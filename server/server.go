@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
+	_ "github.com/go-sql-driver/mysql"
 	"ncbi_proj/server/controllers"
 	"ncbi_proj/server/utils"
 	"net/http"
@@ -26,10 +27,12 @@ func main() {
 		"tool:MrnUaj6Epq2@/versions")
 	defer ctx.Db.Close()
 	if err != nil {
+		log.Fatal("Failed to open database.")
 		log.Fatal(err)
 	}
 	err = ctx.Db.Ping()
 	if err != nil {
+		log.Fatal("Failed to ping database.")
 		log.Fatal(err)
 	}
 
@@ -48,6 +51,6 @@ func main() {
 	log.Println("Starting listener...")
 	err = http.ListenAndServe(":8000", router)
 	if err != nil {
-		log.Fatal("Error in server.")
+		log.Fatal("Error in running listen and serve.")
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Gets a listing of the files and modified times from the FTP server.
+// Gets a listing of files and modified times from the FTP server.
 // Returns a map of the file pathName to the modTime.
 func (c *Context) getServerListing(dir string) (map[string]string,
 	error) {

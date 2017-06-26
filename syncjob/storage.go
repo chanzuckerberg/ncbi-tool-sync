@@ -29,6 +29,11 @@ func (c *Context) UnmountFuse() {
 
 // Creates the table and schema in the db if needed.
 func (c *Context) SetupDb() {
-	query := "CREATE TABLE IF NOT EXISTS entries (PathName TEXT NOT NULL, VersionNum INT NOT NULL, DateModified TEXT, ArchiveKey TEXT, PRIMARY KEY (PathName, VersionNum));"
+	query := "CREATE TABLE IF NOT EXISTS entries (" +
+		"PathName VARCHAR(700) NOT NULL, " +
+		"VersionNum INT NOT NULL, " +
+		"DateModified VARCHAR(40), " +
+		"ArchiveKey VARCHAR(50), " +
+		"PRIMARY KEY (PathName, VersionNum));"
 	c.db.Exec(query)
 }
