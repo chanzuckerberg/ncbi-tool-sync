@@ -40,8 +40,8 @@ func main() {
 	defer c.db.Close()
 
 	// Mount FUSE directory
-	c.UnmountFuse()
-	err = c.MountFuse()
+	//c.UnmountFuse()
+	//err = c.MountFuse()
 	//defer c.UmountFuse()
 	if err != nil {
 		log.Fatal(err)

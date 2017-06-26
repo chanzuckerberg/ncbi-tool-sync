@@ -3,30 +3,27 @@ package main
 import (
 	"fmt"
 	"github.com/jlaffaye/ftp"
-	"path/filepath"
 	"time"
 )
 
-// Gets the date time modified of a file from the FTP server.
-func (c *Context) getServerTime(input string) (string, error) {
-	folder := filepath.Dir(input)
-	file := filepath.Base(input)
-
+// Gets a listing of the files and modified times from the FTP server.
+// Returns a map of the file pathName to the modTime.
+func (c *Context) getServerListing(dir string) (map[string]string,
+	error) {
 	// Open FTP connection
+	FileToTime := make(map[string]string)
 	client, err := c.connectToServer()
 	defer client.Quit()
-	entries, err := client.List(folder)
+	entries, err := client.List(dir)
 	if err != nil {
-		return "", err
+		return FileToTime, err
 	}
 
-	// Find the right entry
 	for _, entry := range entries {
-		if entry.Name == file {
-			return fmt.Sprintf("%s", entry.Time.Format(time.RFC3339)), err
-		}
+		FileToTime[entry.Name] = fmt.Sprintf("%s",
+			entry.Time.Format(time.RFC3339))
 	}
-	return "", err
+	return FileToTime, err
 }
 
 // Connects to the FTP server and returns the client.

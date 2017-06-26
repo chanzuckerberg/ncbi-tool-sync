@@ -8,6 +8,7 @@ import (
 	"ncbi_proj/server/utils"
 )
 
+// Directory Model
 type Directory struct {
 	ctx *utils.Context
 }
