@@ -11,6 +11,7 @@ import (
 	"testing"
 )
 
+// Metadata about a file version from the db
 type Metadata struct {
 	Path       string
 	Version    int

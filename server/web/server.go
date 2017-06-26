@@ -22,7 +22,8 @@ func main() {
 	// Setup
 	ctx := utils.NewContext()
 	var err error
-	ctx.Db, err = sql.Open("sqlite3", "../versionDB.db")
+	ctx.Db, err = sql.Open("mysql",
+		"tool:MrnUaj6Epq2@/versions")
 	defer ctx.Db.Close()
 	if err != nil {
 		log.Fatal(err)

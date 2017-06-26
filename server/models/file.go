@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// File Model
 type File struct {
 	ctx *utils.Context
 }
@@ -21,6 +22,7 @@ func NewFile(ctx *utils.Context) *File {
 	}
 }
 
+// Metadata about a file version from the db
 type Metadata struct {
 	Path       string
 	Version    int
@@ -28,6 +30,7 @@ type Metadata struct {
 	ArchiveKey sql.NullString
 }
 
+// Info about a file version entry for formatting
 type Entry struct {
 	Path    string `json:",omitempty"`
 	Version int    `json:",omitempty"`
