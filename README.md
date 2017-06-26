@@ -6,7 +6,7 @@
   - To avoid running some of the acceptance tests, run go test with -short, e.g.
     - ```go test -short ./...```
 
-- Folder structure for Sync component:
+- Folder structure for sync component:
   - config.yaml (Config file)
   - sync.go
     - Actual synchronization step
