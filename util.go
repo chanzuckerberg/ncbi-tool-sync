@@ -61,11 +61,11 @@ func (c *Context) lastVersionNum(file string, inclArchive bool) int {
 	query := fmt.Sprintf("select VersionNum from entries "+
 		"where PathName='%s' %sorder by VersionNum desc", file, archive)
 	rows, err := c.db.Query(query)
-	defer rows.Close()
 	if err != nil {
 		log.Println("Error: " + err.Error())
 		return num
 	}
+	defer rows.Close()
 
 	if rows.Next() {
 		err = rows.Scan(&num)

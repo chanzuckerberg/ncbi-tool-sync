@@ -13,6 +13,9 @@ func (c *Context) getServerListing(dir string) (map[string]string,
 	// Open FTP connection
 	FileToTime := make(map[string]string)
 	client, err := c.connectToServer()
+	if err != nil {
+		return FileToTime, err
+	}
 	defer client.Quit()
 	entries, err := client.List(dir)
 	if err != nil {
