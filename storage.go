@@ -13,9 +13,9 @@ func (c *Context) MountFuse() error {
 	cmd := fmt.Sprintf("goofys %s remote", c.Bucket)
 	out, err := callCommand(cmd)
 	if err != nil {
-		log.Fatal("Error in mounting FUSE.")
 		log.Println(out)
 		log.Println(err.Error())
+		log.Fatal("Error in mounting FUSE.")
 	}
 	return err
 }

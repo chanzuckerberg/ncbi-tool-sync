@@ -37,6 +37,25 @@ func main() {
 
 	// Load configuration
 	c.configure()
+	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
+	if isDevelopment {
+		// File is created if absent
+		c.db, err = sql.Open("sqlite3",
+			"versions.db")
+	} else {
+		// Setup RDS db from env variables
+		RDS_HOSTNAME := os.Getenv("RDS_HOSTNAME")
+		RDS_PORT := os.Getenv("RDS_PORT")
+		RDS_DB_NAME := os.Getenv("RDS_DB_NAME")
+		RDS_USERNAME := os.Getenv("RDS_USERNAME")
+		RDS_PASSWORD := os.Getenv("RDS_PASSWORD")
+		sourceName := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", RDS_USERNAME, RDS_PASSWORD, RDS_HOSTNAME, RDS_PORT, RDS_DB_NAME)
+		c.db, err = sql.Open("mysql", sourceName)
+	}
+	if err != nil {
+		log.Println("Failed to set up database opener.")
+		log.Fatal(err)
+	}
 	defer c.db.Close()
 
 	// Mount FUSE directory
