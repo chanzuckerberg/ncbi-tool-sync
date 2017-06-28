@@ -65,7 +65,10 @@ func (ctx *Context) callRsyncFlow() error {
 
 	// Actual run
 	log.Println("Actual sync run...")
-	os.MkdirAll(ctx.LocalPath, os.ModePerm)
+	err = os.MkdirAll(ctx.LocalPath, os.ModePerm)
+	if err != nil {
+		log.Println("Couldn't make local path: "+err.Error())
+	}
 	cmd = fmt.Sprintf(template, "", tempDir, source, ctx.LocalPath)
 	out, err = callCommand(cmd)
 	if err != nil {

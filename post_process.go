@@ -103,7 +103,10 @@ func (ctx *Context) handleNewVersion(pathName string,
 			"VersionNum) values('%s', %d)", pathName, versionNum)
 	}
 	_, err = ctx.Db.Exec(query)
-	tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		log.Println("Error committing transaction: "+err.Error())
+	}
 
 	return err
 }
@@ -137,11 +140,14 @@ func (ctx *Context) ingestCurrentFiles() error {
 			return nil
 		})
 	if err != nil {
-		log.Println("Error in walking files. " + err.Error())
+		log.Println("Error in walking files: " + err.Error())
 	}
 
 	fileList = fileList[1:] // Skip the folder itself
-	ctx.handleNewVersions(fileList)
+	err = ctx.handleNewVersions(fileList)
+	if err != nil {
+		log.Println("Error in handling new versions: " + err.Error())
+	}
 	log.Println("Done ingesting existing files into db.")
 	return nil
 }

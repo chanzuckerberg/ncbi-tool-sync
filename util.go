@@ -27,12 +27,16 @@ func timeName() string {
 func (ctx *Context) generateHash(origPath string, path string,
 	num int) (string, error) {
 	// Add a header
+	var err error
+	var result string
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
 	hash := md5.New()
-	io.WriteString(hash, key)
+	_, err = io.WriteString(hash, key)
+	if err != nil {
+		return result, err
+	}
 
 	// Add the file contents
-	var result string
 	file, err := ctx.os.Open(origPath)
 	if err != nil {
 		return result, err
