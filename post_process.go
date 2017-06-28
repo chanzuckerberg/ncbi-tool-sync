@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"log"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
@@ -78,7 +78,7 @@ func (ctx *Context) handleNewVersion(pathName string,
 	var err error
 
 	// Set version number
-	var versionNum int = 1
+	versionNum := 1
 	prevNum := ctx.lastVersionNum(pathName, true)
 	if prevNum > -1 {
 		// Some version already exists
@@ -95,11 +95,11 @@ func (ctx *Context) handleNewVersion(pathName string,
 	}
 	query := ""
 	if modTime != "" {
-		query = fmt.Sprintf("insert into entries(PathName, " +
+		query = fmt.Sprintf("insert into entries(PathName, "+
 			"VersionNum, DateModified) values('%s', %d, '%s')", pathName,
 			versionNum, modTime)
 	} else {
-		query = fmt.Sprintf("insert into entries(PathName, " +
+		query = fmt.Sprintf("insert into entries(PathName, "+
 			"VersionNum) values('%s', %d)", pathName, versionNum)
 	}
 	_, err = ctx.Db.Exec(query)
@@ -112,7 +112,7 @@ func (ctx *Context) handleNewVersion(pathName string,
 // for rebuilding the database or setup after a manual sync. Assumes
 // that the db is already connected.
 func (ctx *Context) ingestCurrentFiles() error {
-	dest := fmt.Sprintf("%s", ctx.LocalPath)
+	dest := ctx.LocalPath
 	_, err := ctx.os.Stat(dest)
 	if err != nil {
 		return err
@@ -123,10 +123,22 @@ func (ctx *Context) ingestCurrentFiles() error {
 	fileList := []string{}
 	err = filepath.Walk(dest,
 		func(path string, f os.FileInfo, err error) error {
+			info, err := os.Stat(path)
+			if info.IsDir() {
+				return nil
+			}
+			if err != nil {
+				log.Println("Error in walking file: " + path)
+				log.Println(err.Error())
+			}
+
 			snippet := path[len(ctx.LocalTop)-2:]
 			fileList = append(fileList, snippet)
 			return nil
-	})
+		})
+	if err != nil {
+		log.Println("Error in walking files. " + err.Error())
+	}
 
 	fileList = fileList[1:] // Skip the folder itself
 	ctx.handleNewVersions(fileList)

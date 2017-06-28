@@ -4,14 +4,14 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"log"
-	"time"
-	_ "github.com/go-sql-driver/mysql"
 	"os/exec"
+	"time"
 )
 
 // Generates a folder name from the current datetime.
@@ -50,9 +50,10 @@ func (ctx *Context) generateHash(origPath string, path string,
 
 // Finds the latest version number of the file. Queries the database
 // for the latest version of the file.
-func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
-	var num int = -1
-	var archive string = ""
+func (ctx *Context) lastVersionNum(file string,
+	inclArchive bool) int {
+	num := -1
+	archive := ""
 	if !inclArchive {
 		// Specify not to include archived entries
 		archive = "and ArchiveKey is null "
@@ -69,6 +70,9 @@ func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
 
 	if rows.Next() {
 		err = rows.Scan(&num)
+		if err != nil {
+			log.Println("Error scanning row. " + err.Error())
+		}
 	}
 	return num
 }
