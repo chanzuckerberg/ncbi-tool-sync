@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/jlaffaye/ftp"
 	"time"
 )
@@ -23,8 +22,7 @@ func (ctx *Context) getServerListing(dir string) (map[string]string,
 	}
 
 	for _, entry := range entries {
-		res := fmt.Sprintf("%s",
-			entry.Time.Format(time.RFC3339))
+		res := entry.Time.Format(time.RFC3339)
 		res = res[:len(res)-1]
 		FileToTime[entry.Name] = res
 	}

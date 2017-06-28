@@ -1,21 +1,21 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
-	"database/sql"
 )
 
-// Mounts the virtual directory. Uses goofys tool to mount S3 as a
-// local folder for syncing operations.
+// MountFuse mounts the virtual directory. Uses goofys tool to mount
+// S3 as a local folder for syncing operations.
 func (ctx *Context) MountFuse() error {
 	log.Println("Starting FUSE mount...")
 	_ = ctx.os.Mkdir("remote", os.ModePerm)
-	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
+	goofysLocation := os.Getenv("GOOFYS")
 	cmd := fmt.Sprintf("./goofys %s remote", ctx.Bucket)
-	if isDevelopment {
-		cmd = fmt.Sprintf("./goofys-mac %s remote", ctx.Bucket)
+	if goofysLocation != "" {
+		cmd = fmt.Sprintf("%s %s remote", goofysLocation, ctx.Bucket)
 	}
 	out, err := callCommand(cmd)
 	if err != nil {
@@ -27,13 +27,14 @@ func (ctx *Context) MountFuse() error {
 	return err
 }
 
-// Unmounts the virtual directory. Ignores errors since directory may
-// already be unmounted.
+// UnmountFuse unmounts the virtual directory. Ignores errors since
+// directory may already be unmounted.
 func (ctx *Context) UnmountFuse() {
 	cmd := fmt.Sprintf("umount remote")
 	callCommand(cmd)
 }
 
+// SetupDatabase sets up the db and checks connection conditions
 func (ctx *Context) SetupDatabase() {
 	var err error
 	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
@@ -42,14 +43,14 @@ func (ctx *Context) SetupDatabase() {
 			"dev:password@tcp(127.0.0.1:3306)/testdb")
 	} else {
 		// Setup RDS db from env variables
-		RDS_HOSTNAME := os.Getenv("RDS_HOSTNAME")
-		RDS_PORT := os.Getenv("RDS_PORT")
-		RDS_DB_NAME := os.Getenv("RDS_DB_NAME")
-		RDS_USERNAME := os.Getenv("RDS_USERNAME")
-		RDS_PASSWORD := os.Getenv("RDS_PASSWORD")
+		rdsHostname := os.Getenv("RDS_HOSTNAME")
+		rdsPort := os.Getenv("RDS_PORT")
+		rdsDbName := os.Getenv("RDS_DB_NAME")
+		rdsUsername := os.Getenv("RDS_USERNAME")
+		rdsPassword := os.Getenv("RDS_PASSWORD")
 		sourceName := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
-			RDS_USERNAME, RDS_PASSWORD, RDS_HOSTNAME, RDS_PORT, RDS_DB_NAME)
-		log.Println("RDS connection string: " + sourceName)
+			rdsUsername, rdsPassword, rdsHostname, rdsPort, rdsDbName)
+		log.Println("DB connection string: " + sourceName)
 		ctx.Db, err = sql.Open("mysql", sourceName)
 	}
 
@@ -66,7 +67,7 @@ func (ctx *Context) SetupDatabase() {
 	log.Println("Successfully connected database.")
 }
 
-// Creates the table and schema in the db if needed.
+// CreateTable creates the table and schema in the db if needed.
 func (ctx *Context) CreateTable() {
 	query := "CREATE TABLE IF NOT EXISTS entries (" +
 		"PathName VARCHAR(500) NOT NULL, " +

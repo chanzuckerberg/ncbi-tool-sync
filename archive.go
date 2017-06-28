@@ -55,6 +55,10 @@ func (ctx *Context) archiveFile(tempDir string) filepath.WalkFunc {
 		// Move to archive folder
 		dest := fmt.Sprintf("%s/archive/%s", ctx.LocalTop[2:], key)
 		err = ctx.os.Rename(origPath, dest)
+		if err != nil {
+			fmt.Println("Error moving changed file to archive folder.")
+			fmt.Println(err.Error())
+		}
 
 		// Update the old entry with archiveKey blob
 		query := fmt.Sprintf(

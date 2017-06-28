@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
 	"database/sql"
-	"log"
 	"github.com/spf13/afero"
+	"log"
+	"os"
 )
 
 // Context holds application state variables
