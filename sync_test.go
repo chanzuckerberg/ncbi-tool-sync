@@ -75,15 +75,24 @@ func TestGenerateHash(t *testing.T) {
 }
 
 func SetupInitialState(t *testing.T) (Context, error) {
-	callCommand("touch testDB.db")
-	db, err := sql.Open("sqlite3",
-		"testDB.db")
-	db.Exec("CREATE TABLE entries (PathName TEXT NOT NULL, VersionNum INT NOT NULL, DateModified TEXT, ArchiveKey TEXT, PRIMARY KEY (PathName, VersionNum));")
+	db, err := sql.Open("mysql",
+		"dev:password@tcp(127.0.0.1:3306)/testdb")
+	db.Exec("drop table entries")
+	db.Exec("create table if not exists entries")
+
+	query := "CREATE TABLE IF NOT EXISTS entries (" +
+		"PathName VARCHAR(500) NOT NULL, " +
+		"VersionNum INT NOT NULL, " +
+		"DateModified DATETIME, " +
+		"ArchiveKey VARCHAR(50), " +
+		"PRIMARY KEY (PathName, VersionNum));"
+	_, err = db.Exec(query)
+
 	if err != nil {
 		t.Errorf(err.Error())
 	}
 	ctx := Context{
-		db:         db,
+		Db:         db,
 		os:         afero.NewOsFs(),
 		Server:     "ftp.ncbi.nih.gov",
 		Port:       "21",
@@ -99,9 +108,9 @@ func SetupInitialState(t *testing.T) (Context, error) {
 	return ctx, err
 }
 
-func cleanup() {
+func cleanup(ctx Context) {
 	os.RemoveAll("testing")
-	os.Remove("testDB.db")
+	ctx.Db.Exec("drop table entries")
 }
 
 // Full-flow acceptance test for new files.
@@ -128,19 +137,19 @@ func TestSyncNewAcceptance(t *testing.T) {
 
 	// Verify expectations
 	md := Metadata{}
-	rows, err := ctx.db.Query("select * from entries;")
+	rows, err := ctx.Db.Query("select * from entries;")
 	rows.Next()
 	rows.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 1, md.Version)
-	assert.Equal(t, "2011-09-16T16:33:49Z", md.ModTime.String)
+	assert.Equal(t, "2011-09-16 16:33:49", md.ModTime.String)
 	_, err = os.Stat("testing/blast/demo/igblast/readme")
 
 	if err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 
-	cleanup()
+	cleanup(ctx)
 }
 
 // Full-flow acceptance test for modified files.
@@ -155,7 +164,7 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	ctx.db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/readme', 1, '2010-09-16T16:33:49Z')")
+	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/readme', 1, '2010-09-16 16:33:49')")
 	out, err := callCommand("echo 'FILE WAS MODIFIED' >> testing/blast/demo/igblast/readme")
 	if err != nil {
 		t.Errorf("%s, %s", out, err.Error())
@@ -168,18 +177,18 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 
 	// Verify expectations
 	md := Metadata{}
-	rows, err := ctx.db.Query("select * from entries order by VersionNum desc;")
+	rows, err := ctx.Db.Query("select * from entries order by VersionNum desc;")
 	rows.Next()
 	rows.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 2, md.Version)
-	assert.Equal(t, "2011-09-16T16:33:49Z", md.ModTime.String)
+	assert.Equal(t, "2011-09-16 16:33:49", md.ModTime.String)
 	_, err = os.Stat("testing/blast/demo/igblast/readme")
 	rows.Next()
 	rows.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 1, md.Version)
-	assert.Equal(t, "2010-09-16T16:33:49Z", md.ModTime.String)
+	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "c215dca037111af9c5ebddf0c90431f4", md.ArchiveKey.String)
 	_, err = os.Stat("testing/archive/c215dca037111af9c5ebddf0c90431f4")
 
@@ -196,7 +205,7 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 		t.Errorf("Unexpected: %s", err)
 	}
 
-	cleanup()
+	cleanup(ctx)
 }
 
 // Full-flow acceptance test for deleted files
@@ -212,7 +221,7 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	_, err = callCommand("touch testing/blast/demo/igblast/testfile")
-	ctx.db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16T16:33:49Z')")
+	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16 16:33:49')")
 
 	// Call our function to test
 	if err = ctx.callRsyncFlow(); err != nil {
@@ -221,7 +230,7 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 
 	// Verify expectations
 	md := Metadata{}
-	rows, err := ctx.db.Query("select * from entries order by VersionNum desc;")
+	rows, err := ctx.Db.Query("select * from entries order by VersionNum desc;")
 	rows.Next()
 	rows.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	if err != nil {
@@ -229,7 +238,7 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	}
 	assert.Equal(t, "/blast/demo/igblast/testfile", md.Path)
 	assert.Equal(t, 1, md.Version)
-	assert.Equal(t, "2010-09-16T16:33:49Z", md.ModTime.String)
+	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "d37650ecfee9f1acdb11699503407acf", md.ArchiveKey.String)
 	_, err = os.Stat("testing/blast/demo/igblast/testfile")
 	if err == nil {
@@ -240,5 +249,5 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 		t.Errorf("File isn't in archive properly.")
 	}
 
-	cleanup()
+	cleanup(ctx)
 }

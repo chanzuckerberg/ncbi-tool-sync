@@ -8,11 +8,11 @@ import (
 
 // Gets a listing of files and modified times from the FTP server.
 // Returns a map of the file pathName to the modTime.
-func (c *Context) getServerListing(dir string) (map[string]string,
+func (ctx *Context) getServerListing(dir string) (map[string]string,
 	error) {
 	// Open FTP connection
 	FileToTime := make(map[string]string)
-	client, err := c.connectToServer()
+	client, err := ctx.connectToServer()
 	if err != nil {
 		return FileToTime, err
 	}
@@ -23,20 +23,22 @@ func (c *Context) getServerListing(dir string) (map[string]string,
 	}
 
 	for _, entry := range entries {
-		FileToTime[entry.Name] = fmt.Sprintf("%s",
+		res := fmt.Sprintf("%s",
 			entry.Time.Format(time.RFC3339))
+		res = res[:len(res)-1]
+		FileToTime[entry.Name] = res
 	}
 	return FileToTime, err
 }
 
 // Connects to the FTP server and returns the client.
-func (c *Context) connectToServer() (*ftp.ServerConn, error) {
-	addr := c.Server + ":" + c.Port
+func (ctx *Context) connectToServer() (*ftp.ServerConn, error) {
+	addr := ctx.Server + ":" + ctx.Port
 	client, err := ftp.Dial(addr)
 	if err != nil {
 		return nil, err
 	}
-	err = client.Login(c.Username, c.Password)
+	err = client.Login(ctx.Username, ctx.Password)
 	if err != nil {
 		return nil, err
 	}
