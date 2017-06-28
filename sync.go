@@ -1,82 +1,12 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/spf13/afero"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 )
-
-type Context struct {
-	db         *sql.DB
-	os         afero.Fs
-	Server     string `yaml:"Server"`
-	Port       string `yaml:"Port"`
-	Username   string `yaml:"Username"`
-	Password   string `yaml:"Password"`
-	SourcePath string `yaml:"SourcePath"`
-	LocalPath  string `yaml:"LocalPath"`
-	LocalTop   string `yaml:"LocalTop"`
-	Bucket     string `yaml:"Bucket"`
-}
-
-func init() {
-	log.SetOutput(os.Stderr)
-	log.SetOutput(os.Stdout)
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-}
-
-// Entry point for the entire sync workflow with remote server.
-func main() {
-	var c Context
-	var err error
-
-	// Load configuration
-	c.configure()
-	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
-	if isDevelopment {
-		// File is created if absent
-		c.db, err = sql.Open("sqlite3",
-			"versions.db")
-	} else {
-		// Setup RDS db from env variables
-		RDS_HOSTNAME := os.Getenv("RDS_HOSTNAME")
-		RDS_PORT := os.Getenv("RDS_PORT")
-		RDS_DB_NAME := os.Getenv("RDS_DB_NAME")
-		RDS_USERNAME := os.Getenv("RDS_USERNAME")
-		RDS_PASSWORD := os.Getenv("RDS_PASSWORD")
-		sourceName := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", RDS_USERNAME, RDS_PASSWORD, RDS_HOSTNAME, RDS_PORT, RDS_DB_NAME)
-		c.db, err = sql.Open("mysql", sourceName)
-	}
-	if err != nil {
-		log.Println("Failed to set up database opener.")
-		log.Fatal(err)
-	}
-	defer c.db.Close()
-
-	// Mount FUSE directory
-	//c.UnmountFuse()
-	//err = c.MountFuse()
-	//defer c.UmountFuse()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Call Rsync flow
-	err = c.callRsyncFlow()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-// Executes a shell command on the local machine.
-func callCommand(input string) ([]byte, error) {
-	return exec.Command("sh", "-c", input).Output()
-}
 
 // Parses the Rsync itemized output for new, modified, and deleted
 // files. Follows the Rsync itemized changes syntax that specify
@@ -109,34 +39,34 @@ func parseChanges(out []byte, base string) ([]string,
 
 // Calls the Rsync workflow. Executes a dry run first for processing.
 // Then runs the real sync. Finally processes the changes.
-func (c *Context) callRsyncFlow() error {
+func (ctx *Context) callRsyncFlow() error {
 	var err error
 	var cmd string
 
 	// Construct Rsync parameters
-	source := fmt.Sprintf("rsync://%s%s/", c.Server,
-		c.SourcePath)
+	source := fmt.Sprintf("rsync://%s%s/", ctx.Server,
+		ctx.SourcePath)
 	tempDir := timeName()
 	template := "rsync -abrzv %s --itemize-changes --delete " +
 		"--size-only --no-motd --exclude='.*' --backup-dir='%s' %s %s"
 
 	// Dry run
-	cmd = fmt.Sprintf(template, "-n", tempDir, source, c.LocalPath)
+	cmd = fmt.Sprintf(template, "-n", tempDir, source, ctx.LocalPath)
 	log.Println("Command: " + cmd)
 	out, err := callCommand(cmd)
 	if err != nil {
 		log.Fatal(out, err)
 		return err
 	}
-	newNow, modified, deleted := parseChanges(out, c.SourcePath)
+	newNow, modified, deleted := parseChanges(out, ctx.SourcePath)
 	log.Printf("New on remote: %s", newNow)
 	log.Printf("Modified on remote: %s", modified)
 	log.Printf("Deleted on remote: %s", deleted)
 
 	// Actual run
 	log.Println("Actual sync run...")
-	os.MkdirAll(c.LocalPath, os.ModePerm)
-	cmd = fmt.Sprintf(template, "", tempDir, source, c.LocalPath)
+	os.MkdirAll(ctx.LocalPath, os.ModePerm)
+	cmd = fmt.Sprintf(template, "", tempDir, source, ctx.LocalPath)
 	out, err = callCommand(cmd)
 	if err != nil {
 		log.Fatal(out, err)
@@ -145,6 +75,6 @@ func (c *Context) callRsyncFlow() error {
 
 	// Process changes
 	log.Println("Processing changes...")
-	err = c.processChanges(newNow, modified, tempDir)
+	err = ctx.processChanges(newNow, modified, tempDir)
 	return err
 }

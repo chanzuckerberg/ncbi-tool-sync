@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"github.com/spf13/afero"
@@ -12,6 +11,7 @@ import (
 	"log"
 	"time"
 	_ "github.com/go-sql-driver/mysql"
+	"os/exec"
 )
 
 // Generates a folder name from the current datetime.
@@ -24,7 +24,7 @@ func timeName() string {
 
 // Generates a hash for the file based on the name, version number,
 // and actual file contents.
-func (c *Context) generateHash(origPath string, path string,
+func (ctx *Context) generateHash(origPath string, path string,
 	num int) (string, error) {
 	// Add a header
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
@@ -33,7 +33,7 @@ func (c *Context) generateHash(origPath string, path string,
 
 	// Add the file contents
 	var result string
-	file, err := c.os.Open(origPath)
+	file, err := ctx.os.Open(origPath)
 	if err != nil {
 		return result, err
 	}
@@ -50,7 +50,7 @@ func (c *Context) generateHash(origPath string, path string,
 
 // Finds the latest version number of the file. Queries the database
 // for the latest version of the file.
-func (c *Context) lastVersionNum(file string, inclArchive bool) int {
+func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
 	var num int = -1
 	var archive string = ""
 	if !inclArchive {
@@ -60,7 +60,7 @@ func (c *Context) lastVersionNum(file string, inclArchive bool) int {
 
 	query := fmt.Sprintf("select VersionNum from entries "+
 		"where PathName='%s' %sorder by VersionNum desc", file, archive)
-	rows, err := c.db.Query(query)
+	rows, err := ctx.Db.Query(query)
 	if err != nil {
 		log.Println("Error: " + err.Error())
 		return num
@@ -74,31 +74,25 @@ func (c *Context) lastVersionNum(file string, inclArchive bool) int {
 }
 
 // Loads the configuration file and starts db connection.
-func (c *Context) configure() *Context {
+func (ctx *Context) loadConfig() *Context {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
 		panic(err)
 	}
 
-	err = yaml.Unmarshal(file, c)
+	err = yaml.Unmarshal(file, ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	c.os = afero.NewOsFs()
-	c.db, err = sql.Open("mysql",
-		"tool:MrnUaj6Epq2@/versions")
+	ctx.os = afero.NewOsFs()
 	if err != nil {
 		log.Fatal(err)
 	}
-	c.SetupDb()
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = c.db.Ping()
-	if err != nil {
-		log.Fatal(err)
-	}
+	return ctx
+}
 
-	return c
+// Executes a shell command on the local machine.
+func callCommand(input string) ([]byte, error) {
+	return exec.Command("sh", "-ctx", input).Output()
 }

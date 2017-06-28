@@ -11,39 +11,39 @@ import (
 // and deleted files are processed by archiveOldVersions in the temp
 // directory. New and modified files have new versions to be added to
 // the db. Temp folder is deleted after handling.
-func (c *Context) processChanges(new []string, modified []string,
+func (ctx *Context) processChanges(new []string, modified []string,
 	tempDir string) error {
 	// Move replaced or deleted file versions to archive
-	err := c.archiveOldVersions(tempDir)
+	err := ctx.archiveOldVersions(tempDir)
 	if err != nil {
 		return err
 	}
 
 	// Add new or modified files as db entries
-	err = c.handleNewVersions(new)
+	err = ctx.handleNewVersions(new)
 	if err != nil {
 		return err
 	}
-	err = c.handleNewVersions(modified)
+	err = ctx.handleNewVersions(modified)
 	if err != nil {
 		return err
 	}
 
 	// Delete temp folder after handling files
-	path := fmt.Sprintf("%s/%s", c.LocalPath, tempDir)
-	err = c.os.RemoveAll(path)
+	path := fmt.Sprintf("%s/%s", ctx.LocalPath, tempDir)
+	err = ctx.os.RemoveAll(path)
 
 	return err
 }
 
 // Handles a list of files with new versions.
-func (c *Context) handleNewVersions(files []string) error {
+func (ctx *Context) handleNewVersions(files []string) error {
 	// Cache is a map of directory names to a map of file names to mod
 	// times.
 	cache := make(map[string]map[string]string)
 
 	for _, file := range files {
-		err := c.handleNewVersion(file, cache)
+		err := ctx.handleNewVersion(file, cache)
 		if err != nil {
 			log.Println(err) // Only log the error and continue
 		}
@@ -53,7 +53,7 @@ func (c *Context) handleNewVersions(files []string) error {
 
 // Gets the date modified times from the FTP server utilizing a
 // directory listing cache.
-func (c *Context) getModTime(pathName string,
+func (ctx *Context) getModTime(pathName string,
 	cache map[string]map[string]string) string {
 	dir := filepath.Dir(pathName)
 	file := filepath.Base(pathName)
@@ -61,7 +61,7 @@ func (c *Context) getModTime(pathName string,
 	var err error
 	if !present {
 		// Get listing from server
-		cache[dir], err = c.getServerListing(dir)
+		cache[dir], err = ctx.getServerListing(dir)
 		if err != nil {
 			log.Println(err)
 		}
@@ -73,30 +73,36 @@ func (c *Context) getModTime(pathName string,
 // version number for this new entry. Gets the datetime modified from
 // the FTP server as a workaround for the lack of date modified times
 // after syncing to S3. Adds the new entry into the db.
-func (c *Context) handleNewVersion(pathName string,
+func (ctx *Context) handleNewVersion(pathName string,
 	cache map[string]map[string]string) error {
 	var err error
 
 	// Set version number
 	var versionNum int = 1
-	prevNum := c.lastVersionNum(pathName, true)
+	prevNum := ctx.lastVersionNum(pathName, true)
 	if prevNum > -1 {
 		// Some version already exists
 		versionNum = prevNum + 1
 	}
 
 	// Set datetime modified using directory listing cache
-	modTime := c.getModTime(pathName, cache)
+	modTime := ctx.getModTime(pathName, cache)
 
 	// Insert into database
-	tx, err := c.db.Begin()
+	tx, err := ctx.Db.Begin()
 	if err != nil {
 		return err
 	}
-	query := fmt.Sprintf("insert into entries(PathName, " +
-		"VersionNum, DateModified) " +
-		"values('%s', %d, '%s')", pathName, versionNum, modTime)
-	_, err = c.db.Exec(query)
+	query := ""
+	if modTime != "" {
+		query = fmt.Sprintf("insert into entries(PathName, " +
+			"VersionNum, DateModified) values('%s', %d, '%s')", pathName,
+			versionNum, modTime)
+	} else {
+		query = fmt.Sprintf("insert into entries(PathName, " +
+			"VersionNum) values('%s', %d)", pathName, versionNum)
+	}
+	_, err = ctx.Db.Exec(query)
 	tx.Commit()
 
 	return err
@@ -105,9 +111,9 @@ func (c *Context) handleNewVersion(pathName string,
 // Ingests all the files in the working directory as new files. Used
 // for rebuilding the database or setup after a manual sync. Assumes
 // that the db is already connected.
-func (c *Context) ingestCurrentFiles() error {
-	dest := fmt.Sprintf("%s", c.LocalPath)
-	_, err := c.os.Stat(dest)
+func (ctx *Context) ingestCurrentFiles() error {
+	dest := fmt.Sprintf("%s", ctx.LocalPath)
+	_, err := ctx.os.Stat(dest)
 	if err != nil {
 		return err
 	}
@@ -117,13 +123,13 @@ func (c *Context) ingestCurrentFiles() error {
 	fileList := []string{}
 	err = filepath.Walk(dest,
 		func(path string, f os.FileInfo, err error) error {
-			snippet := path[len(c.LocalTop)-2:]
+			snippet := path[len(ctx.LocalTop)-2:]
 			fileList = append(fileList, snippet)
 			return nil
 	})
 
 	fileList = fileList[1:] // Skip the folder itself
-	c.handleNewVersions(fileList)
+	ctx.handleNewVersions(fileList)
 	log.Println("Done ingesting existing files into db.")
 	return nil
 }
