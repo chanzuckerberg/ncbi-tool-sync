@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"log"
 )
 
 // Archives old versions of modified or deleted files in the backup
@@ -21,7 +22,10 @@ func (ctx *Context) archiveOldVersions(tempDir string) error {
 
 	// Make archive folder
 	dest := fmt.Sprintf("%s/%s", ctx.LocalPath, tempDir)
-	ctx.os.MkdirAll(ctx.LocalTop+"/archive", os.ModePerm)
+	err = ctx.os.MkdirAll(ctx.LocalTop+"/archive", os.ModePerm)
+	if err != nil {
+		log.Fatal("Couldn't make archive folder: "+err.Error())
+	}
 
 	// Walk through each modified file
 	if _, err = ctx.os.Stat(dest); err == nil {
@@ -56,8 +60,8 @@ func (ctx *Context) archiveFile(tempDir string) filepath.WalkFunc {
 		dest := fmt.Sprintf("%s/archive/%s", ctx.LocalTop[2:], key)
 		err = ctx.os.Rename(origPath, dest)
 		if err != nil {
-			fmt.Println("Error moving changed file to archive folder.")
-			fmt.Println(err.Error())
+			log.Println("Error moving changed file to archive folder.")
+			log.Println(err.Error())
 		}
 
 		// Update the old entry with archiveKey blob
