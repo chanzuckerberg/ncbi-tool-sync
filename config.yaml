@@ -1,8 +1,3 @@
-Server: ftp.ncbi.nih.gov
-Port: 21
-Username: anonymous
-Password: test@test.com
-SourcePath: /blast/demo
-LocalPath: ./remote/blast/demo
-LocalTop: ./remote
-Bucket: czbiohub-jsheu-test
+Server: mirrors.vbi.vt.edu::ftp.ncbi.nih.gov
+SourcePath: /blast/db
+Bucket: czbiohub-ncbi-store

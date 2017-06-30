@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/afero"
 	"log"
 	"os"
+	//"github.com/jasonlvhit/gocron"
 )
 
 // Context holds application state variables
@@ -12,13 +13,12 @@ type Context struct {
 	Db         *sql.DB
 	os         afero.Fs
 	Server     string `yaml:"Server"`
-	Port       string `yaml:"Port"`
-	Username   string `yaml:"Username"`
-	Password   string `yaml:"Password"`
 	SourcePath string `yaml:"SourcePath"`
-	LocalPath  string `yaml:"LocalPath"`
-	LocalTop   string `yaml:"LocalTop"`
 	Bucket     string `yaml:"Bucket"`
+	LocalPath  string // Ex: $HOME/remote/blast/db
+	LocalTop   string // Set as $HOME/remote
+	Archive    string // Set as $HOME/remote/archive
+	UserHome   string
 }
 
 func init() {
@@ -33,7 +33,8 @@ func main() {
 	var err error
 
 	// General config
-	ctx.loadConfig()
+	ctx.UserHome = getUserHome()
+	ctx.setupConfig()
 	ctx.SetupDatabase()
 	defer ctx.Db.Close()
 
@@ -42,15 +43,12 @@ func main() {
 	err = ctx.MountFuse()
 	//defer ctx.UmountFuse()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
-	ctx.ingestCurrentFiles()
-	return
+	ctx.callRsyncFlow()
 
-	// Call Rsync flow
-	err = ctx.callRsyncFlow()
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Schedule task to run every day at 3 a.m.
+	//gocron.Every(1).Day().At("03:00").Do(ctx.callRsyncFlow)
+	//<- gocron.Start()
 }
