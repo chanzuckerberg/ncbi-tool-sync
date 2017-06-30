@@ -11,7 +11,7 @@ import (
 // and deleted files are processed by archiveOldVersions in the temp
 // directory. New and modified files have new versions to be added to
 // the db. Temp folder is deleted after handling.
-func (ctx *Context) processChanges(new []string, modified []string,
+func (ctx *Context) processChanges(newF []string, modified []string,
 	tempDir string) error {
 	// Move replaced or deleted file versions to archive
 	err := ctx.archiveOldVersions(tempDir)
@@ -20,7 +20,7 @@ func (ctx *Context) processChanges(new []string, modified []string,
 	}
 
 	// Add new or modified files as db entries
-	err = ctx.handleNewVersions(new)
+	err = ctx.handleNewVersions(newF)
 	if err != nil {
 		return err
 	}
@@ -30,8 +30,7 @@ func (ctx *Context) processChanges(new []string, modified []string,
 	}
 
 	// Delete temp folder after handling files
-	path := fmt.Sprintf("%s/%s", ctx.LocalPath, tempDir)
-	err = ctx.os.RemoveAll(path)
+	err = ctx.os.RemoveAll(tempDir)
 
 	return err
 }
@@ -76,6 +75,7 @@ func (ctx *Context) getModTime(pathName string,
 func (ctx *Context) handleNewVersion(pathName string,
 	cache map[string]map[string]string) error {
 	var err error
+	log.Println("Handling new version of: "+pathName)
 
 	// Set version number
 	versionNum := 1
@@ -118,6 +118,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 	dest := ctx.LocalPath
 	_, err := ctx.os.Stat(dest)
 	if err != nil {
+		log.Println("No files found in: " + dest)
 		return err
 	}
 
@@ -135,7 +136,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 				log.Println(err.Error())
 			}
 
-			snippet := path[len(ctx.LocalTop)-2:]
+			snippet := path[len(ctx.LocalTop):]
 			fileList = append(fileList, snippet)
 			return nil
 		})

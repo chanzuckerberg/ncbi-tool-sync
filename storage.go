@@ -11,17 +11,20 @@ import (
 // S3 as a local folder for syncing operations.
 func (ctx *Context) MountFuse() error {
 	log.Println("Starting FUSE mount...")
-	_ = ctx.os.Mkdir("remote", os.ModePerm)
-	goofysLocation := os.Getenv("GOOFYS")
-	cmd := fmt.Sprintf("./goofys %s remote", ctx.Bucket)
-	if goofysLocation != "" {
-		cmd = fmt.Sprintf("%s %s remote", goofysLocation, ctx.Bucket)
+	_ = ctx.os.Mkdir(ctx.LocalTop, os.ModePerm)
+	goofys := os.Getenv("GOOFYS")
+	cmd := fmt.Sprintf("./goofys %s %s", ctx.Bucket, ctx.LocalTop)
+	if goofys != "" {
+		cmd = fmt.Sprintf("%s %s %s", goofys, ctx.Bucket,
+			ctx.LocalTop)
 	}
+	log.Println("Mount command: "+ cmd)
 	out, err := callCommand(cmd)
 	if err != nil {
 		log.Println(out)
 		log.Println(err.Error())
-		log.Fatal("Error in mounting FUSE.")
+		log.Println("Error in mounting FUSE.")
+		return err
 	}
 	log.Println("Successful FUSE mount.")
 	return err
@@ -30,8 +33,8 @@ func (ctx *Context) MountFuse() error {
 // UnmountFuse unmounts the virtual directory. Ignores errors since
 // directory may already be unmounted.
 func (ctx *Context) UnmountFuse() {
-	cmd := fmt.Sprintf("umount remote")
-	callCommand(cmd)
+	//cmd := fmt.Sprintf("umount remote")
+	//callCommand(cmd)
 }
 
 // SetupDatabase sets up the db and checks connection conditions

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"os/user"
 )
 
 // Metadata about a file version from the db
@@ -27,7 +28,7 @@ func TestCallCommand(t *testing.T) {
 }
 
 func TestParseChanges(t *testing.T) {
-	out := []byte("receiving file list ... done\n.d..tp... ./\n>f+++++++ blast_programming.ppt\n>f....... ieee_blast.final.ppt\n>f....... edited.ppt\n*deleting ieee_talk.pdf\n*deleting folder/\n.f..t.... mt_tback.tgz\n.f..t.... openmp_test.tar.gz\n>f+++++++ bingbong.ppt\n\nsent 414 bytes  received 2452 bytes  1910.67 bytes/sec\ntotal size is 6943964334  speedup is 2422876.60\n")
+	out := "receiving file list ... done\n.d..tp... ./\n>f+++++++ blast_programming.ppt\n>f....... ieee_blast.final.ppt\n>f....... edited.ppt\n*deleting ieee_talk.pdf\n*deleting folder/\n.f..t.... mt_tback.tgz\n.f..t.... openmp_test.tar.gz\n>f+++++++ bingbong.ppt\n\nsent 414 bytes  received 2452 bytes  1910.67 bytes/sec\ntotal size is 6943964334  speedup is 2422876.60\n"
 	newNow, mod, del := parseChanges(out, "")
 	assert.Equal(t, "/blast_programming.ppt", newNow[0])
 	assert.Equal(t, "/bingbong.ppt", newNow[1])
@@ -93,16 +94,16 @@ func SetupInitialState(t *testing.T) (Context, error) {
 	ctx := Context{
 		Db:         db,
 		os:         afero.NewOsFs(),
-		Server:     "ftp.ncbi.nih.gov",
-		Port:       "21",
-		Username:   "anonymous",
-		Password:   "test@test.com",
+		Server:     "rsync://ftp.ncbi.nih.gov",
 		SourcePath: "/blast/demo/igblast",
-		LocalPath:  "./testing/blast/demo/igblast",
-		LocalTop:   "./testing",
 	}
+	usr, _ := user.Current()
+	ctx.UserHome = usr.HomeDir
+	ctx.LocalTop = ctx.UserHome + "/test/remote"
+	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
+	ctx.Archive = ctx.LocalTop + "/archive"
 	ctx.os.MkdirAll("testing/blast/demo/igblast", os.ModePerm)
-	cmd := "rsync -abrzv --itemize-changes --delete --size-only --no-motd --exclude='.*' rsync://ftp.ncbi.nlm.nih.gov/blast/demo/igblast/ testing/blast/demo/igblast"
+	cmd := "rsync -abrzv --itemize-changes --delete --size-only --no-motd --exclude='.*' rsync://ftp.ncbi.nlm.nih.gov/blast/demo/igblast/ " + ctx.LocalTop + "/blast/demo/igblast"
 	callCommand(cmd)
 	return ctx, err
 }
@@ -124,7 +125,7 @@ func TestSyncNewAcceptance(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	err = os.Remove("testing/blast/demo/igblast/readme")
+	err = os.Remove(ctx.LocalTop + "/blast/demo/igblast/readme")
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -142,7 +143,7 @@ func TestSyncNewAcceptance(t *testing.T) {
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2011-09-16 16:33:49", md.ModTime.String)
-	_, err = os.Stat("testing/blast/demo/igblast/readme")
+	_, err = os.Stat(ctx.LocalTop + "/blast/demo/igblast/readme")
 
 	if err != nil {
 		t.Errorf("Unexpected: %s", err)
@@ -164,7 +165,7 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/readme', 1, '2010-09-16 16:33:49')")
-	out, err := callCommand("echo 'FILE WAS MODIFIED' >> testing/blast/demo/igblast/readme")
+	out, err := callCommand("echo 'FILE WAS MODIFIED' >> " + ctx.LocalTop + "/blast/demo/igblast/readme")
 	if err != nil {
 		t.Errorf("%s, %s", out, err.Error())
 	}
@@ -182,20 +183,20 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 2, md.Version)
 	assert.Equal(t, "2011-09-16 16:33:49", md.ModTime.String)
-	_, err = os.Stat("testing/blast/demo/igblast/readme")
+	_, err = os.Stat(ctx.LocalTop+"/blast/demo/igblast/readme")
 	rows.Next()
 	rows.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "c215dca037111af9c5ebddf0c90431f4", md.ArchiveKey.String)
-	_, err = os.Stat("testing/archive/c215dca037111af9c5ebddf0c90431f4")
+	_, err = os.Stat(ctx.LocalTop+"/archive/c215dca037111af9c5ebddf0c90431f4")
 
-	b, err := ioutil.ReadFile("testing/archive/c215dca037111af9c5ebddf0c90431f4")
+	b, err := ioutil.ReadFile(ctx.LocalTop+"/archive/c215dca037111af9c5ebddf0c90431f4")
 	if !strings.Contains(string(b), "FILE WAS MODIFIED") {
 		t.Errorf("Archive copy doesn't contain string.")
 	}
-	b, err = ioutil.ReadFile("testing/blast/demo/igblast/readme")
+	b, err = ioutil.ReadFile(ctx.LocalTop+"/blast/demo/igblast/readme")
 	if strings.Contains(string(b), "FILE WAS MODIFIED") {
 		t.Errorf("New version is wrong.")
 	}
@@ -219,7 +220,7 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	_, err = callCommand("touch testing/blast/demo/igblast/testfile")
+	_, err = callCommand("touch " + ctx.LocalTop+ "/blast/demo/igblast/testfile")
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16 16:33:49')")
 
 	// Call our function to test
@@ -239,11 +240,11 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "d37650ecfee9f1acdb11699503407acf", md.ArchiveKey.String)
-	_, err = os.Stat("testing/blast/demo/igblast/testfile")
+	_, err = os.Stat(ctx.LocalTop+"/blast/demo/igblast/testfile")
 	if err == nil {
 		t.Errorf("File wasn't deleted from current folder properly.")
 	}
-	_, err = os.Stat("testing/archive/d37650ecfee9f1acdb11699503407acf")
+	_, err = os.Stat(ctx.LocalTop+"/archive/d37650ecfee9f1acdb11699503407acf")
 	if err != nil {
 		t.Errorf("File isn't in archive properly.")
 	}

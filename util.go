@@ -12,6 +12,9 @@ import (
 	"log"
 	"os/exec"
 	"time"
+	"os/user"
+	"bytes"
+	"bufio"
 )
 
 // Generates a folder name from the current datetime.
@@ -20,6 +23,21 @@ func timeName() string {
 	result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
 		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
 	return result
+}
+
+// Generates the temporary directory name
+func setTempDir() string {
+	return getUserHome() + "/backupFolder"
+}
+
+// Gets the full path of the user's home directory
+func getUserHome() string {
+	usr, err := user.Current()
+	if err != nil {
+		log.Println("Couldn't get user's home directory.")
+		log.Fatal(err)
+	}
+	return usr.HomeDir
 }
 
 // Generates a hash for the file based on the name, version number,
@@ -82,25 +100,77 @@ func (ctx *Context) lastVersionNum(file string,
 }
 
 // Loads the configuration file and starts db connection.
-func (ctx *Context) loadConfig() *Context {
+func (ctx *Context) setupConfig() *Context {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
 		panic(err)
 	}
 
+	// Load from config file
 	err = yaml.Unmarshal(file, ctx)
 	if err != nil {
 		panic(err)
 	}
 
+	// Interface for file system
 	ctx.os = afero.NewOsFs()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	ctx.LocalTop = ctx.UserHome + "/remote"
+	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
+	ctx.Archive = ctx.LocalTop + "/archive"
 	return ctx
 }
 
 // Executes a shell command on the local machine.
 func callCommand(input string) ([]byte, error) {
-	return exec.Command("sh", "-ctx", input).Output()
+	return exec.Command("sh", "-ctx", input).CombinedOutput()
+}
+
+// Executes a shell command and returns the stdout, stderr, and err
+func commandWithOutput(input string) (string, string, error) {
+	cmd := exec.Command("sh", "-cx", input)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	cmd.Wait()
+	outResp := stdout.String()
+	errResp := stdout.String()
+	return outResp, errResp, err
+}
+
+func commandVerbose(input string) (string, string, error) {
+	log.Println("Command: " + input)
+	stdout, stderr, err := commandWithOutput(input)
+	fmt.Println(stdout)
+	fmt.Println(stderr)
+	return stdout, stderr, err
+}
+
+func commandStreaming(input string) {
+	var err error
+	log.Println("Command: " + input)
+	cmd := exec.Command("sh", "-cx", input)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Println(err.Error())
+		log.Fatal("Couldn't get from stdout.")
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log.Println(err.Error())
+		log.Fatal("Couldn't get from stderr.")
+	}
+	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
+	go func() {
+		for scanner.Scan() {
+			log.Println(scanner.Text())
+		}
+	}()
+
+	cmd.Start()
+	cmd.Wait()
 }

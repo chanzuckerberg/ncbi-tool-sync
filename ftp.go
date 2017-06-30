@@ -31,12 +31,12 @@ func (ctx *Context) getServerListing(dir string) (map[string]string,
 
 // Connects to the FTP server and returns the client.
 func (ctx *Context) connectToServer() (*ftp.ServerConn, error) {
-	addr := ctx.Server + ":" + ctx.Port
+	addr := "ftp.ncbi.nih.gov:21"
 	client, err := ftp.Dial(addr)
 	if err != nil {
 		return nil, err
 	}
-	err = client.Login(ctx.Username, ctx.Password)
+	err = client.Login("anonymous", "test@test.com")
 	if err != nil {
 		return nil, err
 	}
