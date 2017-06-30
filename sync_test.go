@@ -102,14 +102,14 @@ func SetupInitialState(t *testing.T) (Context, error) {
 	ctx.LocalTop = ctx.UserHome + "/test/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.Archive = ctx.LocalTop + "/archive"
-	ctx.os.MkdirAll("testing/blast/demo/igblast", os.ModePerm)
+	ctx.os.MkdirAll(ctx.LocalTop+"/blast/demo/igblast", os.ModePerm)
 	cmd := "rsync -abrzv --itemize-changes --delete --size-only --no-motd --exclude='.*' rsync://ftp.ncbi.nlm.nih.gov/blast/demo/igblast/ " + ctx.LocalTop + "/blast/demo/igblast"
 	callCommand(cmd)
 	return ctx, err
 }
 
 func cleanup(ctx Context) {
-	os.RemoveAll("testing")
+	os.RemoveAll(ctx.UserHome + "/test")
 	ctx.Db.Exec("drop table entries")
 }
 
