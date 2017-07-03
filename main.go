@@ -43,7 +43,7 @@ func main() {
 	err = ctx.MountFuse()
 	//defer ctx.UmountFuse()
 	if err != nil {
-		log.Println(err)
+		log.Println(err.Error())
 	}
 
 	ctx.callRsyncFlow()

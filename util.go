@@ -15,6 +15,7 @@ import (
 	"os/user"
 	"bytes"
 	"bufio"
+	"os"
 )
 
 // Generates a folder name from the current datetime.
@@ -121,12 +122,18 @@ func (ctx *Context) setupConfig() *Context {
 	ctx.LocalTop = ctx.UserHome + "/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.Archive = ctx.LocalTop + "/archive"
+
+	serv := os.Getenv("SERVER")
+	if serv != "" {
+		ctx.Server = serv
+	}
+
 	return ctx
 }
 
 // Executes a shell command on the local machine.
 func callCommand(input string) ([]byte, error) {
-	return exec.Command("sh", "-ctx", input).CombinedOutput()
+	return exec.Command("sh", "-cx", input).CombinedOutput()
 }
 
 // Executes a shell command and returns the stdout, stderr, and err
