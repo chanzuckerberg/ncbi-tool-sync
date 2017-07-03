@@ -21,7 +21,7 @@ func (ctx *Context) MountFuse() error {
 	log.Println("Mount command: "+ cmd)
 	out, err := callCommand(cmd)
 	if err != nil {
-		log.Println(out)
+		log.Println(string(out))
 		log.Println(err.Error())
 		log.Println("Error in mounting FUSE.")
 		return err
