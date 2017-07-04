@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 // MountFuse mounts the virtual directory. Uses goofys tool to mount
@@ -18,23 +19,20 @@ func (ctx *Context) MountFuse() error {
 		cmd = fmt.Sprintf("%s %s %s", goofys, ctx.Bucket,
 			ctx.LocalTop)
 	}
-	log.Println("Mount command: "+ cmd)
-	out, err := callCommand(cmd)
+	_, _, err := commandVerbose(cmd)
 	if err != nil {
-		log.Println(string(out))
-		log.Println(err.Error())
 		log.Println("Error in mounting FUSE.")
 		return err
 	}
-	log.Println("Successful FUSE mount.")
+	time.Sleep(time.Duration(5)*time.Second)
 	return err
 }
 
 // UnmountFuse unmounts the virtual directory. Ignores errors since
 // directory may already be unmounted.
 func (ctx *Context) UnmountFuse() {
-	//cmd := fmt.Sprintf("umount remote")
-	//callCommand(cmd)
+	commandVerbose("sudo umount -f " + ctx.LocalTop)
+	time.Sleep(time.Duration(5)*time.Second)
 }
 
 // SetupDatabase sets up the db and checks connection conditions

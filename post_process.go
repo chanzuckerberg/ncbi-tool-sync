@@ -14,10 +14,11 @@ import (
 func (ctx *Context) processChanges(newF []string, modified []string,
 	tempDir string) error {
 	// Move replaced or deleted file versions to archive
-	err := ctx.archiveOldVersions(tempDir)
-	if err != nil {
-		return err
-	}
+	var err error
+	//err := ctx.archiveOldVersions(tempDir)
+	//if err != nil {
+	//	return err
+	//}
 
 	// Add new or modified files as db entries
 	err = ctx.handleNewVersions(newF)
@@ -30,7 +31,7 @@ func (ctx *Context) processChanges(newF []string, modified []string,
 	}
 
 	// Delete temp folder after handling files
-	err = ctx.os.RemoveAll(tempDir)
+	//err = ctx.os.RemoveAll(tempDir)
 
 	return err
 }

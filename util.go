@@ -56,14 +56,14 @@ func (ctx *Context) generateHash(origPath string, path string,
 	}
 
 	// Add the file contents
-	file, err := ctx.os.Open(origPath)
-	if err != nil {
-		return result, err
-	}
-	defer file.Close()
-	if _, err := io.Copy(hash, file); err != nil {
-		return result, err
-	}
+	//file, err := ctx.os.Open(origPath)
+	//if err != nil {
+	//	return result, err
+	//}
+	//defer file.Close()
+	//if _, err := io.Copy(hash, file); err != nil {
+	//	return result, err
+	//}
 
 	// Generate checksum
 	hashInBytes := hash.Sum(nil)[:16]
@@ -122,6 +122,7 @@ func (ctx *Context) setupConfig() *Context {
 	ctx.LocalTop = ctx.UserHome + "/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.Archive = ctx.LocalTop + "/archive"
+	ctx.TempNew = ctx.UserHome + "/tempNew"
 
 	serv := os.Getenv("SERVER")
 	if serv != "" {
@@ -143,17 +144,25 @@ func commandWithOutput(input string) (string, string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	cmd.Wait()
 	outResp := stdout.String()
-	errResp := stdout.String()
+	errResp := stderr.String()
 	return outResp, errResp, err
 }
 
 func commandVerbose(input string) (string, string, error) {
 	log.Println("Command: " + input)
 	stdout, stderr, err := commandWithOutput(input)
-	fmt.Println(stdout)
-	fmt.Println(stderr)
+	if stdout != "" {
+		log.Print(stdout)
+	}
+	if stderr != "" {
+		log.Print(stderr)
+	}
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		log.Println("Command ran with no errors.")
+	}
 	return stdout, stderr, err
 }
 
