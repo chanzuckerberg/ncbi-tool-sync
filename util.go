@@ -26,11 +26,6 @@ func timeName() string {
 	return result
 }
 
-// Generates the temporary directory name
-func setTempDir() string {
-	return getUserHome() + "/backupFolder"
-}
-
 // Gets the full path of the user's home directory
 func getUserHome() string {
 	usr, err := user.Current()
@@ -173,12 +168,12 @@ func commandStreaming(input string) {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Println(err.Error())
-		log.Fatal("Couldn't get from stdout.")
+		log.Println("Couldn't get from stdout.")
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		log.Println(err.Error())
-		log.Fatal("Couldn't get from stderr.")
+		log.Println("Couldn't get from stderr.")
 	}
 	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
 	go func() {
@@ -187,6 +182,13 @@ func commandStreaming(input string) {
 		}
 	}()
 
-	cmd.Start()
-	cmd.Wait()
+	err = cmd.Start()
+	if err != nil {
+		log.Println("Error in starting command. "+err.Error())
+	}
+	err = cmd.Wait()
+	if err != nil {
+		log.Println("Error in command execution. "+err.Error())
+	}
+	log.Println("Command finished executing.")
 }

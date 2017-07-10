@@ -46,7 +46,7 @@ func TestProcessChangesTrivial(t *testing.T) {
 	ctx.LocalPath = "local/sub"
 	ctx.LocalTop = "local"
 
-	err := ctx.processChanges([]string{}, []string{}, "temp")
+	err := ctx.dbUpdateStage([]string{}, []string{}, "temp")
 	if err != nil {
 		t.Logf(err.Error())
 	}
@@ -139,7 +139,7 @@ func TestSyncNewAcceptance(t *testing.T) {
 	}
 
 	// Call our function to test
-	if err = ctx.callRsyncFlow(); err != nil {
+	if err = ctx.callSyncFlow(); err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 
@@ -179,7 +179,7 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 	}
 
 	// Call our function to test
-	if err = ctx.callRsyncFlow(); err != nil {
+	if err = ctx.callSyncFlow(); err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 
@@ -233,7 +233,7 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16 16:33:49')")
 
 	// Call our function to test
-	if err = ctx.callRsyncFlow(); err != nil {
+	if err = ctx.callSyncFlow(); err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 
