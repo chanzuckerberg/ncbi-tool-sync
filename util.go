@@ -169,7 +169,7 @@ func commandVerbose(input string) (string, string, error) {
 func commandStreaming(input string) {
 	var err error
 	log.Println("Command: " + input)
-	cmd := exec.Command("sh", "-cx", input)
+	cmd := exec.Command("bash", "-c", input)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Println(err.Error())

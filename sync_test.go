@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"os/user"
+	"log"
+	"time"
 )
 
 // Metadata about a file version from the db
@@ -70,7 +72,7 @@ func TestGenerateHash(t *testing.T) {
 	}
 
 	res, err := ctx.generateHash("temp", "tempHello", 1)
-	assert.Equal(t, "4da1b90d8dcea849087d2df445df67ff", res)
+	assert.Equal(t, "f761c73b4cefb84b02e0b7f1576ca395", res)
 	ctx.os.Remove("temp")
 }
 
@@ -102,9 +104,15 @@ func SetupInitialState(t *testing.T) (Context, error) {
 	ctx.LocalTop = ctx.UserHome + "/test/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.Archive = ctx.LocalTop + "/archive"
-	ctx.os.MkdirAll(ctx.LocalTop+"/blast/demo/igblast", os.ModePerm)
+	ctx.Bucket = "czbiohub-jsheu-test"
+	ctx.TempNew = ctx.UserHome + "/test/tempNew"
+	err = ctx.os.MkdirAll(ctx.LocalTop+"/blast/demo/igblast", os.ModePerm)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+	log.Println("Calling setup sync...")
 	cmd := "rsync -abrzv --itemize-changes --delete --size-only --no-motd --exclude='.*' rsync://ftp.ncbi.nlm.nih.gov/blast/demo/igblast/ " + ctx.LocalTop + "/blast/demo/igblast"
-	callCommand(cmd)
+	commandVerbose(cmd)
 	return ctx, err
 }
 
@@ -189,10 +197,10 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
-	assert.Equal(t, "c215dca037111af9c5ebddf0c90431f4", md.ArchiveKey.String)
-	_, err = os.Stat(ctx.LocalTop+"/archive/c215dca037111af9c5ebddf0c90431f4")
+	assert.Equal(t, "e0942d53c65bb568d200f25b3042fbc7", md.ArchiveKey.String)
+	_, err = os.Stat(ctx.LocalTop+"/archive/e0942d53c65bb568d200f25b3042fbc7")
 
-	b, err := ioutil.ReadFile(ctx.LocalTop+"/archive/c215dca037111af9c5ebddf0c90431f4")
+	b, err := ioutil.ReadFile(ctx.LocalTop+"/archive/e0942d53c65bb568d200f25b3042fbc7")
 	if !strings.Contains(string(b), "FILE WAS MODIFIED") {
 		t.Errorf("Archive copy doesn't contain string.")
 	}
@@ -220,6 +228,7 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
+	time.Sleep(time.Duration(5)*time.Second)
 	_, err = callCommand("touch " + ctx.LocalTop+ "/blast/demo/igblast/testfile")
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16 16:33:49')")
 
@@ -240,13 +249,16 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "d37650ecfee9f1acdb11699503407acf", md.ArchiveKey.String)
+	time.Sleep(time.Duration(10)*time.Second)
 	_, err = os.Stat(ctx.LocalTop+"/blast/demo/igblast/testfile")
 	if err == nil {
 		t.Errorf("File wasn't deleted from current folder properly.")
+		t.FailNow()
 	}
 	_, err = os.Stat(ctx.LocalTop+"/archive/d37650ecfee9f1acdb11699503407acf")
 	if err != nil {
 		t.Errorf("File isn't in archive properly.")
+		t.FailNow()
 	}
 
 	cleanup(ctx)
