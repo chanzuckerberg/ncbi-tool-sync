@@ -11,39 +11,30 @@ import (
 // and deleted files are processed by archiveOldVersions in the temp
 // directory. New and modified files have new versions to be added to
 // the db. Temp folder is deleted after handling.
-func (ctx *Context) processChanges(newF []string, modified []string,
-	tempDir string) error {
-	// Move replaced or deleted file versions to archive
+func (ctx *Context) dbUpdateStage(newF []string, modified []string) error {
 	var err error
-	//err := ctx.archiveOldVersions(tempDir)
-	//if err != nil {
-	//	return err
-	//}
+	log.Println("Beginning db update stage.")
 
 	// Add new or modified files as db entries
-	err = ctx.handleNewVersions(newF)
+	err = ctx.dbNewVersions(newF)
 	if err != nil {
 		return err
 	}
-	err = ctx.handleNewVersions(modified)
+	err = ctx.dbNewVersions(modified)
 	if err != nil {
 		return err
 	}
-
-	// Delete temp folder after handling files
-	//err = ctx.os.RemoveAll(tempDir)
-
 	return err
 }
 
 // Handles a list of files with new versions.
-func (ctx *Context) handleNewVersions(files []string) error {
+func (ctx *Context) dbNewVersions(files []string) error {
 	// Cache is a map of directory names to a map of file names to mod
 	// times.
 	cache := make(map[string]map[string]string)
 
 	for _, file := range files {
-		err := ctx.handleNewVersion(file, cache)
+		err := ctx.dbNewVersion(file, cache)
 		if err != nil {
 			log.Println(err) // Only log the error and continue
 		}
@@ -73,7 +64,7 @@ func (ctx *Context) getModTime(pathName string,
 // version number for this new entry. Gets the datetime modified from
 // the FTP server as a workaround for the lack of date modified times
 // after syncing to S3. Adds the new entry into the db.
-func (ctx *Context) handleNewVersion(pathName string,
+func (ctx *Context) dbNewVersion(pathName string,
 	cache map[string]map[string]string) error {
 	var err error
 	log.Println("Handling new version of: "+pathName)
@@ -146,7 +137,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 	}
 
 	fileList = fileList[1:] // Skip the folder itself
-	err = ctx.handleNewVersions(fileList)
+	err = ctx.dbNewVersions(fileList)
 	if err != nil {
 		log.Println("Error in handling new versions: " + err.Error())
 	}
