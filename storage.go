@@ -24,7 +24,7 @@ func (ctx *Context) MountFuse() error {
 		log.Println("Error in mounting FUSE.")
 		return err
 	}
-	time.Sleep(time.Duration(5)*time.Second)
+	time.Sleep(time.Duration(3)*time.Second)
 	return err
 }
 
@@ -32,7 +32,7 @@ func (ctx *Context) MountFuse() error {
 // directory may already be unmounted.
 func (ctx *Context) UnmountFuse() {
 	commandVerbose("sudo umount -f " + ctx.LocalTop)
-	time.Sleep(time.Duration(5)*time.Second)
+	time.Sleep(time.Duration(3)*time.Second)
 }
 
 // SetupDatabase sets up the db and checks connection conditions

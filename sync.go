@@ -56,7 +56,7 @@ func (ctx *Context) rsyncCaller() error {
 			case <- quit:
 				return
 			default:
-				stdout, stderr, err := commandWithOutput("mountpoint " + ctx.LocalTop)
+				stdout, stderr, err := commandWithOutput("ls " + ctx.LocalTop)
 				if strings.Contains(stderr, "endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
 					log.Println(stdout)
 					log.Println(stderr)
@@ -80,24 +80,43 @@ func (ctx *Context) callRsyncFlow() error {
 
 	ctx.UnmountFuse()
 	ctx.MountFuse()
-	defer ctx.UnmountFuse()
+	//defer ctx.UnmountFuse()
 	ctx.checkMount()
+	quit := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <- quit:
+				return
+			default:
+				stdout, stderr, err := commandWithOutput("ls " + ctx.LocalTop)
+				if strings.Contains(stderr, "endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
+					log.Println(stdout)
+					log.Println(stderr)
+					log.Println("Can't connect to mount point.")
+					ctx.UnmountFuse()
+					ctx.MountFuse()
+				}
+				time.Sleep(time.Duration(10)*time.Second)
+			}
+		}
+	}()
 
 	// Construct Rsync parameters
 	source := fmt.Sprintf("%s%s/", ctx.Server, ctx.SourcePath)
 	tempDir := setTempDir()
-	template := "rsync -abrzv %s --itemize-changes --delete " +
+	template := "rsync -arzv -n --itemize-changes --delete " +
 		"--size-only --no-motd --exclude '.*' --exclude 'cloud/*' " +
 		"--exclude 'nr.gz' --exclude 'nt.gz' --exclude " +
 		"'other_genomic.gz' --exclude 'refseq_genomic*' " +
-		"--copy-links --prune-empty-dirs --backup-dir='%s' %s %s"
+		"--copy-links --prune-empty-dirs %s %s"
 
 	// Dry run
 	err = os.MkdirAll(ctx.LocalPath, os.ModePerm)
 	if err != nil {
 		log.Println("Couldn't make local path: "+err.Error())
 	}
-	cmd = fmt.Sprintf(template, "-n", tempDir, source, ctx.LocalPath)
+	cmd = fmt.Sprintf(template, source, ctx.LocalPath)
 	log.Println("Beginning dry run execution...")
 	stdout, _, err := commandVerbose(cmd)
 	if err != nil {
@@ -111,7 +130,7 @@ func (ctx *Context) callRsyncFlow() error {
 	log.Printf("Modified on remote: %s", modified)
 	log.Printf("Deleted on remote: %s", deleted)
 
-	// Copy from remote to local temp
+	//// Copy from remote to local temp
 	ctx.copyFromRemote(newF)
 	ctx.copyFromRemote(modified)
 
@@ -138,6 +157,7 @@ func (ctx *Context) callRsyncFlow() error {
 	log.Println("Done with real run...\nProcessing changes...")
 	err = ctx.processChanges(newF, modified, tempDir)
 	log.Println("Finished processing changes.")
+	quit <- true
 	return err
 }
 
@@ -156,10 +176,12 @@ func (ctx *Context) moveOldFile(file string) error {
 		Region: aws.String(endpoints.UsWest2RegionID),
 	}))
 	svc := s3.New(sess)
+	log.Println("Copy from: " + ctx.Bucket + file)
+	log.Println("Copy to: " + "archive/" + key)
 	input := &s3.CopyObjectInput{
 		Bucket:     aws.String(ctx.Bucket),
 		CopySource: aws.String(ctx.Bucket + file),
-		Key:        aws.String(ctx.Archive + "/" + key),
+		Key:        aws.String("archive/" + key),
 	}
 	result, err := svc.CopyObject(input)
 	log.Println(result)
@@ -181,7 +203,7 @@ func (ctx *Context) moveOldFile(file string) error {
 
 func (ctx *Context) moveOldFiles(files []string) error {
 	for _, file := range files {
-		go ctx.moveOldFile(file)
+		ctx.moveOldFile(file)
 	}
 	return nil
 }
