@@ -7,7 +7,11 @@ import (
 	"os"
 	"io"
 	"strings"
-	"github.com/jasonlvhit/gocron"
+	//"github.com/jasonlvhit/gocron"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 )
 
 // Context holds application state variables
@@ -30,8 +34,34 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-// Entry point for the entire sync workflow with remote server.
 func main() {
+	bucketName := "czbiohub-jsheu-test"
+	keyName := "test-key"
+	file, err := os.Open("/Users/jsheu/Desktop/newfile")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer file.Close()
+
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(endpoints.UsWest2RegionID),
+	}))
+	uploader := s3manager.NewUploader(sess)
+
+	// Perform an upload.
+	result, err := uploader.Upload(&s3manager.UploadInput{
+		Bucket: &bucketName,
+		Key:    &keyName,
+		Body:   file,
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Println(result)
+}
+
+// Entry point for the entire sync workflow with remote server.
+func test() {
 	logFile, err := os.OpenFile("log.txt", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatal("Couldn't open log file.")
@@ -52,9 +82,9 @@ func main() {
 
 	// Schedule task to run periodically
 	//gocron.Every(1).Day().At("03:00").Do(ctx.callSyncFlow)
-	gocron.Every(3).Hours().Do(ctx.callSyncFlow)
-	log.Println("Task has been scheduled...")
-	<- gocron.Start()
+	//gocron.Every(3).Hours().Do(ctx.callSyncFlow)
+	//log.Println("Task has been scheduled...")
+	//<- gocron.Start()
 }
 
 func (ctx *Context) checkMount() {

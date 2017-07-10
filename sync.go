@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
-	"bytes"
 	"time"
+	"bytes"
 )
 
 // Parses the Rsync itemized output for new, modified, and deleted
@@ -71,27 +71,31 @@ func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted
 	log.Println("Beginning file operations stage.")
 
 	// Copy from NCBI remote to local temp folder
-	ctx.copyFromRemote(newF)
-	ctx.copyFromRemote(modified)
+	log.Println("Going to copy new and modified files from remote...")
+	//ctx.copyFromRemote(newF)
+	//ctx.copyFromRemote(modified)
 
 	// Move files around on S3 to be replaced. Moves the to-be-replaced
 	// files to the archive folder on S3 and renames them.
+	log.Println("Going to move around modified and deleted files on remote...")
 	ctx.moveOldFiles(modified)
 	ctx.moveOldFiles(deleted)
 
 	// Delete files to-be-deleted on S3
+	log.Println("Going to delete files on remote...")
 	ctx.deleteObjects(modified)
 	ctx.deleteObjects(deleted)
 
 	// Upload new files saved locally to S3
+	log.Println("Going to upload local temp files to remote...")
 	ctx.putObjects(newF)
 	ctx.putObjects(modified)
 
 	// Delete local temp folder
-	err := os.RemoveAll(ctx.TempNew)
-	if err != nil {
-		log.Println("Error removing path. "+err.Error())
-	}
+	//err := os.RemoveAll(ctx.TempNew)
+	//if err != nil {
+	//	log.Println("Error removing path. "+err.Error())
+	//}
 }
 
 func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
@@ -152,7 +156,7 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	log.Printf("New on remote: %s", newF)
 	log.Printf("Modified on remote: %s", modified)
 	log.Printf("Deleted on remote: %s", deleted)
-	return []string{}, []string{}, []string{}, err
+	return newF, modified, deleted, err
 }
 
 func (ctx *Context) moveOldFile(file string) error {
@@ -175,12 +179,12 @@ func (ctx *Context) moveOldFile(file string) error {
 	// Ex: bucket/remote/blast/db/README
 	log.Println("Copy from: " + ctx.Bucket + file)
 	log.Println("Copy-to key: " + "archive/" + key)
-	params := &s3.CopyObjectInput{
+	params := &s3.UploadPartCopyInput{
 		Bucket:     aws.String(ctx.Bucket),
 		CopySource: aws.String(ctx.Bucket + file),
 		Key:        aws.String("archive/" + key),
 	}
-	output, err := svc.CopyObject(params)
+	output, err := svc.UploadPartCopy(params)
 	log.Println(output)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error in copying %s on S3. %s", file, err.Error()))
@@ -241,7 +245,7 @@ func (ctx *Context) putObject(filePath string) error {
 	svc := s3.New(sess)
 	// Ex: $HOME/tempNew/blast/db/README
 	source := fmt.Sprintf("%s%s", ctx.TempNew, filePath)
-	log.Println("Source: " + source)
+	log.Println("File upload. Source: " + source)
 	local, err := os.Open(source)
 	if err != nil {
 		log.Println("Error in opening file on disk. " + err.Error())
@@ -253,21 +257,39 @@ func (ctx *Context) putObject(filePath string) error {
 		log.Println("Error in reading file on disk. " + err.Error())
 		return err
 	}
-
-	// Upload file to S3
 	size := info.Size()
 	buffer := make([]byte, size)
-	local.Read(buffer)
-	fileBytes := bytes.NewReader(buffer)
-	input := &s3.PutObjectInput{
-		Body:                 fileBytes,
-		Bucket:               aws.String(ctx.Bucket),
-		Key:                  aws.String(filePath),
-	}
-	output, err := svc.PutObject(input)
-	log.Println(output)
+	_, err = local.Read(buffer)
 	if err != nil {
-		log.Println(fmt.Sprintf("Error in uploading %s to S3. %s", source, err.Error()))
+		log.Println("Error in reading file into buffer. "+err.Error())
+	}
+	fileBytes := bytes.NewReader(buffer)
+
+	if size < 4500 {
+		// Upload file to S3
+		input := &s3.PutObjectInput{
+			Body:                 fileBytes,
+			Bucket:               aws.String(ctx.Bucket),
+			Key:                  aws.String(filePath),
+		}
+		output, err := svc.PutObject(input)
+		log.Println(output)
+		if err != nil {
+			log.Println(fmt.Sprintf("Error in uploading %s to S3. %s", source, err.Error()))
+		}
+	} else {
+		// Multi-part upload
+		input := &s3.CreateMultipartUploadInput{
+			Bucket:               aws.String(ctx.Bucket),
+			Key:                  aws.String(filePath),
+		}
+		output, err := svc.CreateMultipartUpload(input)
+		svc.CompleteMultipartUpload()
+
+		log.Println(output)
+		if err != nil {
+			log.Println(fmt.Sprintf("Error in creating multi-part upload of %s to S3. %s", source, err.Error()))
+		}
 	}
 	return err
 }
