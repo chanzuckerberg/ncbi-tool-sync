@@ -95,11 +95,16 @@ func (ctx *Context) dbNewVersion(pathName string,
 			"VersionNum) values('%s', %d)", pathName, versionNum)
 	}
 	_, err = ctx.Db.Exec(query)
+	if err != nil {
+		err = newErr("Error in making query.", err)
+		log.Println(err)
+		return err
+	}
 	err = tx.Commit()
 	if err != nil {
-		log.Println("Error committing transaction: "+err.Error())
+		err = newErr("Error committing transaction.", err)
+		log.Println(err)
 	}
-
 	return err
 }
 
@@ -124,8 +129,9 @@ func (ctx *Context) ingestCurrentFiles() error {
 				return nil
 			}
 			if err != nil {
-				log.Println("Error in walking file: " + path)
-				log.Println(err.Error())
+				err = newErr("Error in walking file: " + path + ".", err)
+				log.Println(err)
+				return err
 			}
 
 			snippet := path[len(ctx.LocalTop):]
@@ -133,13 +139,17 @@ func (ctx *Context) ingestCurrentFiles() error {
 			return nil
 		})
 	if err != nil {
-		log.Println("Error in walking files: " + err.Error())
+		err = newErr("Error in walking files.", err)
+		log.Println(err)
+		return err
 	}
 
 	fileList = fileList[1:] // Skip the folder itself
 	err = ctx.dbNewVersions(fileList)
 	if err != nil {
-		log.Println("Error in handling new versions: " + err.Error())
+		err = newErr("Error in handling new versions.", err)
+		log.Println(err)
+		return err
 	}
 	log.Println("Done ingesting existing files into db.")
 	return nil

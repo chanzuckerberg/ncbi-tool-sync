@@ -10,8 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
-	"time"
-	"bytes"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 // Parses the Rsync itemized output for new, modified, and deleted
@@ -47,11 +46,13 @@ func parseChanges(out string, base string) ([]string,
 // Then runs the real sync. Finally processes the changes.
 func (ctx *Context) callSyncFlow() error {
 	var err error
+	log.Println("Start of sync flow...")
 
 	// Dry run analysis stage
 	newF, modified, deleted, err := ctx.dryRunStage()
 	if err != nil {
-		log.Println("Error in running dry run. "+err.Error())
+		err = newErr("Error in running dry run.", err)
+		log.Println(err)
 		return err
 	}
 
@@ -61,9 +62,12 @@ func (ctx *Context) callSyncFlow() error {
 	// Db operation stage. Process changes in the db entries.
 	err = ctx.dbUpdateStage(newF, modified)
 	if err != nil {
-		log.Println("Error in processing db changes. "+err.Error())
+		err = newErr("Error in processing db changes.", err)
+		log.Println(err)
+		return err
 	}
 	log.Println("Finished processing changes.")
+	log.Println("End of sync flow...")
 	return err
 }
 
@@ -72,8 +76,8 @@ func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted
 
 	// Copy from NCBI remote to local temp folder
 	log.Println("Going to copy new and modified files from remote...")
-	//ctx.copyFromRemote(newF)
-	//ctx.copyFromRemote(modified)
+	ctx.copyFromRemote(newF)
+	ctx.copyFromRemote(modified)
 
 	// Move files around on S3 to be replaced. Moves the to-be-replaced
 	// files to the archive folder on S3 and renames them.
@@ -90,42 +94,22 @@ func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted
 	log.Println("Going to upload local temp files to remote...")
 	ctx.putObjects(newF)
 	ctx.putObjects(modified)
-
-	// Delete local temp folder
-	//err := os.RemoveAll(ctx.TempNew)
-	//if err != nil {
-	//	log.Println("Error removing path. "+err.Error())
-	//}
 }
 
 func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	var err error
+	var newF, modified, deleted []string
 	log.Println("Beginning dry run stage.")
+
+	// FUSE mounting steps
 	ctx.UnmountFuse()
 	ctx.MountFuse()
 	defer ctx.UnmountFuse()
 	ctx.checkMount()
 
-	// Start go routine for checking FUSE connection
+	// Start go routine for checking FUSE connection continuously
 	quit := make(chan bool)
-	go func() {
-		for {
-			select {
-			case <- quit:
-				return
-			default:
-				stdout, stderr, err := commandWithOutput("ls " + ctx.LocalTop)
-				if strings.Contains(stderr, "endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
-					log.Println(stdout)
-					log.Println(stderr)
-					log.Println("Can't connect to mount point.")
-					ctx.UnmountFuse()
-					ctx.MountFuse()
-				}
-				time.Sleep(time.Duration(5)*time.Second)
-			}
-		}
-	}()
+	ctx.checkMountRepeat(quit)
 
 	// Construct Rsync parameters
 	// Ex: ftp.ncbi.nih.gov/blast/db
@@ -139,7 +123,9 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	// Dry run
 	err = os.MkdirAll(ctx.LocalPath, os.ModePerm)
 	if err != nil {
-		log.Println("Couldn't make local path: "+err.Error())
+		err = newErr("Couldn't make local path.", err)
+		log.Println(err)
+		return newF, modified, deleted, err
 	}
 	cmd := fmt.Sprintf(template, source, ctx.LocalPath)
 	log.Println("Beginning dry run execution...")
@@ -152,7 +138,7 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	// FUSE connection no longer needed after this point.
 	quit <- true // Terminate FUSE-checking goroutine
 	log.Println("Done with dry run...\nParsing changes...")
-	newF, modified, deleted := parseChanges(stdout, ctx.SourcePath)
+	newF, modified, deleted = parseChanges(stdout, ctx.SourcePath)
 	log.Printf("New on remote: %s", newF)
 	log.Printf("Modified on remote: %s", modified)
 	log.Printf("Deleted on remote: %s", deleted)
@@ -167,28 +153,42 @@ func (ctx *Context) moveOldFile(file string) error {
 	num := ctx.lastVersionNum(file, false)
 	key, err := ctx.generateHash(localPath, file, num)
 	if err != nil {
-		log.Println("Error in generating checksum. " + err.Error())
+		err = newErr("Error in generating checksum.", err)
+		log.Println(err)
 		return err
 	}
 
 	// Move to archive folder
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(endpoints.UsWest2RegionID),
-	}))
-	svc := s3.New(sess)
+	svc := s3.New(session.Must(session.NewSession()))
 	// Ex: bucket/remote/blast/db/README
 	log.Println("Copy from: " + ctx.Bucket + file)
 	log.Println("Copy-to key: " + "archive/" + key)
-	params := &s3.UploadPartCopyInput{
-		Bucket:     aws.String(ctx.Bucket),
-		CopySource: aws.String(ctx.Bucket + file),
-		Key:        aws.String("archive/" + key),
-	}
-	output, err := svc.UploadPartCopy(params)
-	log.Println(output)
+
+	// Get file size
+	size, err := ctx.fileSizeOnS3(file, svc)
 	if err != nil {
-		log.Println(fmt.Sprintf("Error in copying %s on S3. %s", file, err.Error()))
 		return err
+	}
+
+	// File operations
+	if size > 4500000000 {
+		log.Println("Large file handling...")
+		// Download object to local disk
+		err = ctx.getObject(file)
+		if err != nil {
+			return err
+		}
+		// Upload to archive folder on S3 under new name
+		err = ctx.putObject(ctx.TempOld+"/temp", "archive/"+key)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Handle on S3
+		err = ctx.copyOnS3(file, key, svc)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Update the old db entry with archiveKey blob
@@ -198,7 +198,30 @@ func (ctx *Context) moveOldFile(file string) error {
 	log.Println("Db query: " + query)
 	_, err = ctx.Db.Exec(query)
 	if err != nil {
-		log.Println("Error in updating db entry. " + err.Error())
+		err = newErr("Error in updating db entry.", err)
+		log.Println(err)
+	}
+	return err
+}
+
+func (ctx *Context) getObject(file string) error {
+	svc := s3manager.NewDownloader(session.Must(session.NewSession()))
+	os.MkdirAll(ctx.TempOld, os.ModePerm)
+	onDisk, err := os.Create(ctx.TempOld + "/temp")
+	if err != nil {
+		err = newErr("Error in creating temp file.", err)
+		log.Println(err)
+		return err
+	}
+	log.Println("File retrieval: " + file)
+	output, err := svc.Download(onDisk, &s3.GetObjectInput{
+		Bucket: aws.String(ctx.Bucket),
+		Key: aws.String(file),
+	})
+	log.Println(output)
+	if err != nil {
+		err = newErr("Error in retrieving file from S3.", err)
+		log.Println(err)
 	}
 	return err
 }
@@ -214,10 +237,11 @@ func (ctx *Context) copyFromRemote(files []string) error {
 	for _, file := range files {
 		source := fmt.Sprintf("%s%s", ctx.Server, file)
 		// Ex: $HOME/tempNew/blast/db
-		log.Println("Local path to make: " + ctx.TempNew + filepath.Dir(file))
+		log.Println("Local dir to make: " + ctx.TempNew + filepath.Dir(file))
 		err := os.MkdirAll(ctx.TempNew + filepath.Dir(file), os.ModePerm)
 		if err != nil {
-			log.Println("Couldn't make dir. " + err.Error())
+			err = newErr("Couldn't make dir.", err)
+			log.Println(err)
 			return err
 		}
 		// Ex: $HOME/tempNew/blast/db/README
@@ -232,66 +256,73 @@ func (ctx *Context) copyFromRemote(files []string) error {
 
 func (ctx *Context) putObjects(files []string) error {
 	for _, file := range files {
-		ctx.putObject(file)
+		ctx.putObject(ctx.TempNew+file, file)
 	}
 	return nil
 }
 
-func (ctx *Context) putObject(filePath string) error {
+func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 	// Setup
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(endpoints.UsWest2RegionID),
-	}))
-	svc := s3.New(sess)
+	sess := session.Must(session.NewSession())
 	// Ex: $HOME/tempNew/blast/db/README
-	source := fmt.Sprintf("%s%s", ctx.TempNew, filePath)
-	log.Println("File upload. Source: " + source)
-	local, err := os.Open(source)
+	log.Println("File upload. Source: " + onDisk)
+	local, err := os.Open(onDisk)
 	if err != nil {
-		log.Println("Error in opening file on disk. " + err.Error())
+		err = newErr("Error in opening file on disk.", err)
+		log.Println(err)
 		return err
 	}
 	defer local.Close()
-	info, err := local.Stat()
+
+	// Upload to S3
+	uploader := s3manager.NewUploader(sess)
+	output, err := uploader.Upload(&s3manager.UploadInput{
+		Body:                 local,
+		Bucket:               aws.String(ctx.Bucket),
+		Key:                  aws.String(uploadKey),
+	})
+	log.Println(output)
 	if err != nil {
-		log.Println("Error in reading file on disk. " + err.Error())
+		err = newErr(fmt.Sprintf("Error in large file upload of %s to S3.", onDisk), err)
+		log.Println(err)
 		return err
 	}
-	size := info.Size()
-	buffer := make([]byte, size)
-	_, err = local.Read(buffer)
-	if err != nil {
-		log.Println("Error in reading file into buffer. "+err.Error())
+
+	// Remove file locally after upload finished
+	os.Remove(onDisk)
+	return err
+}
+
+func (ctx *Context) copyOnS3(file string, key string, svc *s3.S3) error {
+	params := &s3.CopyObjectInput{
+		Bucket:     aws.String(ctx.Bucket),
+		CopySource: aws.String(ctx.Bucket + file),
+		Key:        aws.String("archive/" + key),
 	}
-	fileBytes := bytes.NewReader(buffer)
-
-	if size < 4500 {
-		// Upload file to S3
-		input := &s3.PutObjectInput{
-			Body:                 fileBytes,
-			Bucket:               aws.String(ctx.Bucket),
-			Key:                  aws.String(filePath),
-		}
-		output, err := svc.PutObject(input)
-		log.Println(output)
-		if err != nil {
-			log.Println(fmt.Sprintf("Error in uploading %s to S3. %s", source, err.Error()))
-		}
-	} else {
-		// Multi-part upload
-		input := &s3.CreateMultipartUploadInput{
-			Bucket:               aws.String(ctx.Bucket),
-			Key:                  aws.String(filePath),
-		}
-		output, err := svc.CreateMultipartUpload(input)
-		svc.CompleteMultipartUpload()
-
-		log.Println(output)
-		if err != nil {
-			log.Println(fmt.Sprintf("Error in creating multi-part upload of %s to S3. %s", source, err.Error()))
-		}
+	output, err := svc.CopyObject(params)
+	log.Println(output)
+	if err != nil {
+		err = newErr(fmt.Sprintf("Error in copying %s on S3.", file), err)
+		log.Println(err)
 	}
 	return err
+}
+
+func (ctx *Context) fileSizeOnS3(file string, svc *s3.S3) (int, error) {
+	var result int
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(ctx.Bucket),
+		Key:    aws.String(file),
+	}
+	output, err := svc.HeadObject(input)
+	log.Println(output)
+	if err != nil {
+		err = newErr("Error in HeadObject request.", err)
+		log.Println(err)
+		return result, err
+	}
+	result = int(*output.ContentLength)
+	return result, err
 }
 
 func (ctx *Context) deleteObjects(files []string) error {
@@ -303,10 +334,7 @@ func (ctx *Context) deleteObjects(files []string) error {
 
 func (ctx *Context) deleteObject(file string) error {
 	// Setup
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(endpoints.UsWest2RegionID),
-	}))
-	svc := s3.New(sess)
+	svc := s3.New(session.Must(session.NewSession()))
 	input := &s3.DeleteObjectInput{
 		Bucket: aws.String(ctx.Bucket),
 		Key:    aws.String(file),
@@ -315,7 +343,8 @@ func (ctx *Context) deleteObject(file string) error {
 	output, err := svc.DeleteObject(input)
 	log.Println(output)
 	if err != nil {
-		log.Println("Error in deleting object. "+err.Error())
+		err = newErr("Error in deleting object.", err)
+		log.Println(err)
 	}
 	return err
 }
