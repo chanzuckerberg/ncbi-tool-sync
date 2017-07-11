@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"strings"
 )
 
 // MountFuse mounts the virtual directory. Uses goofys tool to mount
@@ -34,6 +35,36 @@ func (ctx *Context) UnmountFuse() {
 	commandVerbose("sudo umount -f " + ctx.LocalTop)
 	time.Sleep(time.Duration(3)*time.Second)
 }
+
+func (ctx *Context) checkMount() {
+	_, stderr, err := commandVerbose("ls " + ctx.LocalTop)
+	if strings.Contains(stderr, "Transport endpoint is not connected") || err != nil {
+		log.Fatal("Can't connect to mount point.")
+	}
+	log.Println("Mount check successful.")
+}
+
+func (ctx *Context) checkMountRepeat(quit chan bool) {
+	go func() {
+		for {
+			select {
+			case <- quit:
+				return
+			default:
+				stdout, stderr, err := commandWithOutput("ls " + ctx.LocalTop)
+				if strings.Contains(stderr, "endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
+					log.Println(stdout)
+					log.Println(stderr)
+					log.Println("Can't connect to mount point.")
+					ctx.UnmountFuse()
+					ctx.MountFuse()
+				}
+				time.Sleep(time.Duration(5)*time.Second)
+			}
+		}
+	}()
+}
+
 
 // SetupDatabase sets up the db and checks connection conditions
 func (ctx *Context) SetupDatabase() {

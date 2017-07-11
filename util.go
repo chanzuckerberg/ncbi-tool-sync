@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"bufio"
 	"os"
+	"errors"
 )
 
 // Generates a folder name from the current datetime.
@@ -81,7 +82,8 @@ func (ctx *Context) lastVersionNum(file string,
 		"where PathName='%s' %sorder by VersionNum desc", file, archive)
 	rows, err := ctx.Db.Query(query)
 	if err != nil {
-		log.Println("Error: " + err.Error())
+		err = newErr("Error in getting VersionNum.", err)
+		log.Println(err)
 		return num
 	}
 	defer rows.Close()
@@ -89,7 +91,8 @@ func (ctx *Context) lastVersionNum(file string,
 	if rows.Next() {
 		err = rows.Scan(&num)
 		if err != nil {
-			log.Println("Error scanning row. " + err.Error())
+			err = newErr("Error scanning row.", err)
+			log.Println(err)
 		}
 	}
 	return num
@@ -118,6 +121,7 @@ func (ctx *Context) setupConfig() *Context {
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.Archive = ctx.LocalTop + "/archive"
 	ctx.TempNew = ctx.UserHome + "/tempNew"
+	ctx.TempOld = ctx.UserHome + "/tempOld"
 
 	serv := os.Getenv("SERVER")
 	if serv != "" {
@@ -125,6 +129,10 @@ func (ctx *Context) setupConfig() *Context {
 	}
 
 	return ctx
+}
+
+func newErr(input string, err error) error {
+	return errors.New(input + " " + err.Error())
 }
 
 // Executes a shell command on the local machine.
@@ -154,7 +162,8 @@ func commandVerbose(input string) (string, string, error) {
 		log.Print(stderr)
 	}
 	if err != nil {
-		log.Println(err.Error())
+		err = newErr("Error in running command.", err)
+		log.Println(err)
 	} else {
 		log.Println("Command ran with no errors.")
 	}
@@ -167,13 +176,13 @@ func commandStreaming(input string) {
 	cmd := exec.Command("bash", "-c", input)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Println(err.Error())
-		log.Println("Couldn't get from stdout.")
+		err = newErr("Couldn't get from stdout.", err)
+		log.Println(err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		log.Println(err.Error())
-		log.Println("Couldn't get from stderr.")
+		err = newErr("Couldn't get from stderr.", err)
+		log.Println(err)
 	}
 	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
 	go func() {
@@ -184,11 +193,13 @@ func commandStreaming(input string) {
 
 	err = cmd.Start()
 	if err != nil {
-		log.Println("Error in starting command. "+err.Error())
+		err = newErr("Error in starting command.", err)
+		log.Println(err)
 	}
 	err = cmd.Wait()
 	if err != nil {
-		log.Println("Error in command execution. "+err.Error())
+		err = newErr("Error in command execution.", err)
+		log.Println(err)
 	}
 	log.Println("Command finished executing.")
 }
