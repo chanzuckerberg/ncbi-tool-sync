@@ -21,9 +21,10 @@ func (ctx *Context) MountFuse() error {
 		cmd = fmt.Sprintf("%s %s %s", goofys, ctx.Bucket,
 			ctx.LocalTop)
 	}
-	_, _, err := commandVerbose(cmd)
+	_, _, err := commandVerboseOnErr(cmd)
 	if err != nil {
-		log.Print("Error in mounting FUSE.")
+		err = newErr("Error in mounting FUSE.", err)
+		log.Print(err)
 		return err
 	}
 	time.Sleep(time.Duration(3)*time.Second)
@@ -33,7 +34,7 @@ func (ctx *Context) MountFuse() error {
 // UnmountFuse unmounts the virtual directory. Ignores errors since
 // directory may already be unmounted.
 func (ctx *Context) UnmountFuse() {
-	commandVerbose("sudo umount -f " + ctx.LocalTop)
+	commandVerboseOnErr("sudo umount " + ctx.LocalTop)
 	time.Sleep(time.Duration(3)*time.Second)
 }
 
