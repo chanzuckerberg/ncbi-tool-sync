@@ -169,22 +169,20 @@ func (ctx *Context) moveOldFile(file string) error {
 	}
 
 	// File operations
-	if size > 4500000000 {
-		log.Print("Large file handling...")
-		// Download object to local disk
-		err = ctx.getObject(file)
-		if err != nil {
-			return err
-		}
-		// Upload to archive folder on S3 under new name
-		err = ctx.putObject(ctx.TempOld+"/temp", "archive/"+key)
+	if size < 4500000000 {
+		// Handle via S3 SDK
+		err = ctx.copyOnS3(file, key, svc)
 		if err != nil {
 			return err
 		}
 	} else {
-		// Handle on S3
-		err = ctx.copyOnS3(file, key, svc)
+		log.Print("Large file handling...")
+		// Handle via S3 command line tool
+		cmd := fmt.Sprintf("aws s3 mv s3://%s%s s3://%s/archive/%s", ctx.Bucket, file, ctx.Bucket, key)
+		_, _, err = commandVerbose(cmd)
 		if err != nil {
+			err = newErr("Error in moving file on S3 via CLI.", err)
+			log.Println(err)
 			return err
 		}
 	}
@@ -281,7 +279,7 @@ func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 	})
 	log.Print(output)
 	if err != nil {
-		err = newErr(fmt.Sprintf("Error in large file upload of %s to S3.", onDisk), err)
+		err = newErr(fmt.Sprintf("Error in file upload of %s to S3.", onDisk), err)
 		log.Print(err)
 		return err
 	}

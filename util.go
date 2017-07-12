@@ -129,6 +129,10 @@ func (ctx *Context) setupConfig() *Context {
 	if serv != "" {
 		ctx.Server = serv
 	}
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		os.Setenv("AWS_REGION", "us-west-2")
+	}
 
 	return ctx
 }
