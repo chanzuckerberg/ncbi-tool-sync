@@ -49,6 +49,6 @@ func main() {
 
 	// Schedule task to run periodically
 	gocron.Every(3).Hours().Do(ctx.callSyncFlow)
-	log.Println("Task has been scheduled...")
+	log.Print("Task has been scheduled...")
 	<- gocron.Start()
 }

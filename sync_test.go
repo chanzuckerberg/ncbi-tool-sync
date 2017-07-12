@@ -110,7 +110,7 @@ func SetupInitialState(t *testing.T) (Context, error) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Println("Calling setup sync...")
+	log.Print("Calling setup sync...")
 	cmd := "rsync -abrzv --itemize-changes --delete --size-only --no-motd --exclude='.*' rsync://ftp.ncbi.nlm.nih.gov/blast/demo/igblast/ " + ctx.LocalTop + "/blast/demo/igblast"
 	commandVerbose(cmd)
 	return ctx, err

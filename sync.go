@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
@@ -46,13 +45,13 @@ func parseChanges(out string, base string) ([]string,
 // Then runs the real sync. Finally processes the changes.
 func (ctx *Context) callSyncFlow() error {
 	var err error
-	log.Println("Start of sync flow...")
+	log.Print("Start of sync flow...")
 
 	// Dry run analysis stage
 	newF, modified, deleted, err := ctx.dryRunStage()
 	if err != nil {
-		err = newErr("Error in running dry run.", err)
-		log.Println(err)
+		err = newErr("Error in dry run stage.", err)
+		log.Print(err)
 		return err
 	}
 
@@ -63,35 +62,35 @@ func (ctx *Context) callSyncFlow() error {
 	err = ctx.dbUpdateStage(newF, modified)
 	if err != nil {
 		err = newErr("Error in processing db changes.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
-	log.Println("Finished processing changes.")
-	log.Println("End of sync flow...")
+	log.Print("Finished processing changes.")
+	log.Print("End of sync flow...")
 	return err
 }
 
 func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted []string) {
-	log.Println("Beginning file operations stage.")
+	log.Print("Beginning file operations stage.")
 
 	// Copy from NCBI remote to local temp folder
-	log.Println("Going to copy new and modified files from remote...")
+	log.Print("Going to copy new and modified files from remote...")
 	ctx.copyFromRemote(newF)
 	ctx.copyFromRemote(modified)
 
 	// Move files around on S3 to be replaced. Moves the to-be-replaced
 	// files to the archive folder on S3 and renames them.
-	log.Println("Going to move around modified and deleted files on remote...")
+	log.Print("Going to move around modified and deleted files on remote...")
 	ctx.moveOldFiles(modified)
 	ctx.moveOldFiles(deleted)
 
 	// Delete files to-be-deleted on S3
-	log.Println("Going to delete files on remote...")
+	log.Print("Going to delete files on remote...")
 	ctx.deleteObjects(modified)
 	ctx.deleteObjects(deleted)
 
 	// Upload new files saved locally to S3
-	log.Println("Going to upload local temp files to remote...")
+	log.Print("Going to upload local temp files to remote...")
 	ctx.putObjects(newF)
 	ctx.putObjects(modified)
 }
@@ -99,7 +98,7 @@ func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted
 func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	var err error
 	var newF, modified, deleted []string
-	log.Println("Beginning dry run stage.")
+	log.Print("Beginning dry run stage.")
 
 	// FUSE mounting steps
 	ctx.UnmountFuse()
@@ -124,20 +123,19 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	err = os.MkdirAll(ctx.LocalPath, os.ModePerm)
 	if err != nil {
 		err = newErr("Couldn't make local path.", err)
-		log.Println(err)
+		log.Print(err)
 		return newF, modified, deleted, err
 	}
 	cmd := fmt.Sprintf(template, source, ctx.LocalPath)
-	log.Println("Beginning dry run execution...")
-	stdout, _, err := commandVerbose(cmd)
+	log.Print("Beginning dry run execution...")
+	stdout, _, err := commandVerboseOnErr(cmd)
 	if err != nil {
-		log.Println(err)
-		log.Fatal("Error in running dry run.")
+		return newF, modified, deleted, err
 	}
 
 	// FUSE connection no longer needed after this point.
 	quit <- true // Terminate FUSE-checking goroutine
-	log.Println("Done with dry run...\nParsing changes...")
+	log.Print("Done with dry run...\nParsing changes...")
 	newF, modified, deleted = parseChanges(stdout, ctx.SourcePath)
 	log.Printf("New on remote: %s", newF)
 	log.Printf("Modified on remote: %s", modified)
@@ -149,20 +147,20 @@ func (ctx *Context) moveOldFile(file string) error {
 	// Setup
 	// Ex: $HOME/remote/blast/db/README
 	localPath := ctx.LocalTop + file
-	log.Println("Archiving old version of: "+file)
+	log.Print("Archiving old version of: "+file)
 	num := ctx.lastVersionNum(file, false)
 	key, err := ctx.generateHash(localPath, file, num)
 	if err != nil {
 		err = newErr("Error in generating checksum.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
 
 	// Move to archive folder
 	svc := s3.New(session.Must(session.NewSession()))
 	// Ex: bucket/remote/blast/db/README
-	log.Println("Copy from: " + ctx.Bucket + file)
-	log.Println("Copy-to key: " + "archive/" + key)
+	log.Print("Copy from: " + ctx.Bucket + file)
+	log.Print("Copy-to key: " + "archive/" + key)
 
 	// Get file size
 	size, err := ctx.fileSizeOnS3(file, svc)
@@ -172,7 +170,7 @@ func (ctx *Context) moveOldFile(file string) error {
 
 	// File operations
 	if size > 4500000000 {
-		log.Println("Large file handling...")
+		log.Print("Large file handling...")
 		// Download object to local disk
 		err = ctx.getObject(file)
 		if err != nil {
@@ -195,11 +193,11 @@ func (ctx *Context) moveOldFile(file string) error {
 	query := fmt.Sprintf(
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
-	log.Println("Db query: " + query)
+	log.Print("Db query: " + query)
 	_, err = ctx.Db.Exec(query)
 	if err != nil {
 		err = newErr("Error in updating db entry.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	return err
 }
@@ -210,18 +208,18 @@ func (ctx *Context) getObject(file string) error {
 	onDisk, err := os.Create(ctx.TempOld + "/temp")
 	if err != nil {
 		err = newErr("Error in creating temp file.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
-	log.Println("File retrieval: " + file)
+	log.Print("File retrieval: " + file)
 	output, err := svc.Download(onDisk, &s3.GetObjectInput{
 		Bucket: aws.String(ctx.Bucket),
 		Key: aws.String(file),
 	})
-	log.Println(output)
+	log.Print(output)
 	if err != nil {
 		err = newErr("Error in retrieving file from S3.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	return err
 }
@@ -237,11 +235,11 @@ func (ctx *Context) copyFromRemote(files []string) error {
 	for _, file := range files {
 		source := fmt.Sprintf("%s%s", ctx.Server, file)
 		// Ex: $HOME/tempNew/blast/db
-		log.Println("Local dir to make: " + ctx.TempNew + filepath.Dir(file))
+		log.Print("Local dir to make: " + ctx.TempNew + filepath.Dir(file))
 		err := os.MkdirAll(ctx.TempNew + filepath.Dir(file), os.ModePerm)
 		if err != nil {
 			err = newErr("Couldn't make dir.", err)
-			log.Println(err)
+			log.Print(err)
 			return err
 		}
 		// Ex: $HOME/tempNew/blast/db/README
@@ -265,11 +263,11 @@ func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 	// Setup
 	sess := session.Must(session.NewSession())
 	// Ex: $HOME/tempNew/blast/db/README
-	log.Println("File upload. Source: " + onDisk)
+	log.Print("File upload. Source: " + onDisk)
 	local, err := os.Open(onDisk)
 	if err != nil {
 		err = newErr("Error in opening file on disk.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
 	defer local.Close()
@@ -281,10 +279,10 @@ func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 		Bucket:               aws.String(ctx.Bucket),
 		Key:                  aws.String(uploadKey),
 	})
-	log.Println(output)
+	log.Print(output)
 	if err != nil {
 		err = newErr(fmt.Sprintf("Error in large file upload of %s to S3.", onDisk), err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
 
@@ -300,10 +298,10 @@ func (ctx *Context) copyOnS3(file string, key string, svc *s3.S3) error {
 		Key:        aws.String("archive/" + key),
 	}
 	output, err := svc.CopyObject(params)
-	log.Println(output)
+	log.Print(output)
 	if err != nil {
 		err = newErr(fmt.Sprintf("Error in copying %s on S3.", file), err)
-		log.Println(err)
+		log.Print(err)
 	}
 	return err
 }
@@ -315,10 +313,10 @@ func (ctx *Context) fileSizeOnS3(file string, svc *s3.S3) (int, error) {
 		Key:    aws.String(file),
 	}
 	output, err := svc.HeadObject(input)
-	log.Println(output)
+	log.Print(output)
 	if err != nil {
 		err = newErr("Error in HeadObject request.", err)
-		log.Println(err)
+		log.Print(err)
 		return result, err
 	}
 	result = int(*output.ContentLength)
@@ -341,10 +339,10 @@ func (ctx *Context) deleteObject(file string) error {
 	}
 
 	output, err := svc.DeleteObject(input)
-	log.Println(output)
+	log.Print(output)
 	if err != nil {
 		err = newErr("Error in deleting object.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	return err
 }
