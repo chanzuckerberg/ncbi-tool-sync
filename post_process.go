@@ -13,7 +13,7 @@ import (
 // the db. Temp folder is deleted after handling.
 func (ctx *Context) dbUpdateStage(newF []string, modified []string) error {
 	var err error
-	log.Println("Beginning db update stage.")
+	log.Print("Beginning db update stage.")
 
 	// Add new or modified files as db entries
 	err = ctx.dbNewVersions(newF)
@@ -36,7 +36,7 @@ func (ctx *Context) dbNewVersions(files []string) error {
 	for _, file := range files {
 		err := ctx.dbNewVersion(file, cache)
 		if err != nil {
-			log.Println(err) // Only log the error and continue
+			log.Print(err) // Only log the error and continue
 		}
 	}
 	return nil
@@ -54,7 +54,7 @@ func (ctx *Context) getModTime(pathName string,
 		// Get listing from server
 		cache[dir], err = ctx.getServerListing(dir)
 		if err != nil {
-			log.Println(err)
+			log.Print(err)
 		}
 	}
 	return cache[dir][file]
@@ -67,7 +67,7 @@ func (ctx *Context) getModTime(pathName string,
 func (ctx *Context) dbNewVersion(pathName string,
 	cache map[string]map[string]string) error {
 	var err error
-	log.Println("Handling new version of: "+pathName)
+	log.Print("Handling new version of: "+pathName)
 
 	// Set version number
 	versionNum := 1
@@ -97,13 +97,13 @@ func (ctx *Context) dbNewVersion(pathName string,
 	_, err = ctx.Db.Exec(query)
 	if err != nil {
 		err = newErr("Error in making query.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
 	err = tx.Commit()
 	if err != nil {
 		err = newErr("Error committing transaction.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	return err
 }
@@ -115,12 +115,12 @@ func (ctx *Context) ingestCurrentFiles() error {
 	dest := ctx.LocalPath
 	_, err := ctx.os.Stat(dest)
 	if err != nil {
-		log.Println("No files found in: " + dest)
+		log.Print("No files found in: " + dest)
 		return err
 	}
 
 	// Construct a list of all the file path names recursively
-	log.Println("Starting to ingest all existing files into db...")
+	log.Print("Starting to ingest all existing files into db...")
 	fileList := []string{}
 	err = filepath.Walk(dest,
 		func(path string, f os.FileInfo, err error) error {
@@ -130,7 +130,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 			}
 			if err != nil {
 				err = newErr("Error in walking file: " + path + ".", err)
-				log.Println(err)
+				log.Print(err)
 				return err
 			}
 
@@ -140,7 +140,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 		})
 	if err != nil {
 		err = newErr("Error in walking files.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
 
@@ -148,9 +148,9 @@ func (ctx *Context) ingestCurrentFiles() error {
 	err = ctx.dbNewVersions(fileList)
 	if err != nil {
 		err = newErr("Error in handling new versions.", err)
-		log.Println(err)
+		log.Print(err)
 		return err
 	}
-	log.Println("Done ingesting existing files into db.")
+	log.Print("Done ingesting existing files into db.")
 	return nil
 }

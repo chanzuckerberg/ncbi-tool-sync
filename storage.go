@@ -7,12 +7,13 @@ import (
 	"os"
 	"time"
 	"strings"
+	"runtime"
 )
 
 // MountFuse mounts the virtual directory. Uses goofys tool to mount
 // S3 as a local folder for syncing operations.
 func (ctx *Context) MountFuse() error {
-	log.Println("Starting FUSE mount...")
+	log.Print("Starting FUSE mount...")
 	_ = ctx.os.Mkdir(ctx.LocalTop, os.ModePerm)
 	goofys := os.Getenv("GOOFYS")
 	cmd := fmt.Sprintf("./goofys %s %s", ctx.Bucket, ctx.LocalTop)
@@ -22,7 +23,7 @@ func (ctx *Context) MountFuse() error {
 	}
 	_, _, err := commandVerbose(cmd)
 	if err != nil {
-		log.Println("Error in mounting FUSE.")
+		log.Print("Error in mounting FUSE.")
 		return err
 	}
 	time.Sleep(time.Duration(3)*time.Second)
@@ -37,11 +38,15 @@ func (ctx *Context) UnmountFuse() {
 }
 
 func (ctx *Context) checkMount() {
-	_, stderr, err := commandVerbose("ls " + ctx.LocalTop)
-	if strings.Contains(stderr, "Transport endpoint is not connected") || err != nil {
+	cmd := "ls "
+	if runtime.GOOS == "linux" {
+		cmd = "mountpoint "
+	}
+	_, stderr, err := commandVerbose(cmd + ctx.LocalTop)
+	if strings.Contains(stderr, "Transport endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
 		log.Fatal("Can't connect to mount point.")
 	}
-	log.Println("Mount check successful.")
+	log.Print("Mount check successful.")
 }
 
 func (ctx *Context) checkMountRepeat(quit chan bool) {
@@ -51,11 +56,15 @@ func (ctx *Context) checkMountRepeat(quit chan bool) {
 			case <- quit:
 				return
 			default:
-				stdout, stderr, err := commandWithOutput("ls " + ctx.LocalTop)
+				cmd := "ls "
+				if runtime.GOOS == "linux" {
+					cmd = "mountpoint "
+				}
+				stdout, stderr, err := commandWithOutput(cmd + ctx.LocalTop)
 				if strings.Contains(stderr, "endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
-					log.Println(stdout)
-					log.Println(stderr)
-					log.Println("Can't connect to mount point.")
+					log.Print(stdout)
+					log.Print(stderr)
+					log.Print("Can't connect to mount point.")
 					ctx.UnmountFuse()
 					ctx.MountFuse()
 				}
@@ -64,7 +73,6 @@ func (ctx *Context) checkMountRepeat(quit chan bool) {
 		}
 	}()
 }
-
 
 // SetupDatabase sets up the db and checks connection conditions
 func (ctx *Context) SetupDatabase() {
@@ -82,21 +90,21 @@ func (ctx *Context) SetupDatabase() {
 		rdsPassword := os.Getenv("RDS_PASSWORD")
 		sourceName := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
 			rdsUsername, rdsPassword, rdsHostname, rdsPort, rdsDbName)
-		log.Println("DB connection string: " + sourceName)
+		log.Print("DB connection string: " + sourceName)
 		ctx.Db, err = sql.Open("mysql", sourceName)
 	}
 
 	if err != nil {
-		log.Println(err)
+		log.Print(err)
 		log.Fatal("Failed to set up database opener.")
 	}
 	err = ctx.Db.Ping()
 	if err != nil {
-		log.Println(err)
+		log.Print(err)
 		log.Fatal("Failed to ping database.")
 	}
 	ctx.CreateTable()
-	log.Println("Successfully connected database.")
+	log.Print("Successfully connected database.")
 }
 
 // CreateTable creates the table and schema in the db if needed.
@@ -109,7 +117,7 @@ func (ctx *Context) CreateTable() {
 		"PRIMARY KEY (PathName, VersionNum));"
 	_, err := ctx.Db.Exec(query)
 	if err != nil {
-		log.Println(err)
+		log.Print(err)
 		log.Fatal("Failed to find or create table.")
 	}
 }

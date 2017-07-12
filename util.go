@@ -31,7 +31,7 @@ func timeName() string {
 func getUserHome() string {
 	usr, err := user.Current()
 	if err != nil {
-		log.Println("Couldn't get user's home directory.")
+		log.Print("Couldn't get user's home directory.")
 		log.Fatal(err)
 	}
 	return usr.HomeDir
@@ -83,7 +83,7 @@ func (ctx *Context) lastVersionNum(file string,
 	rows, err := ctx.Db.Query(query)
 	if err != nil {
 		err = newErr("Error in getting VersionNum.", err)
-		log.Println(err)
+		log.Print(err)
 		return num
 	}
 	defer rows.Close()
@@ -92,7 +92,7 @@ func (ctx *Context) lastVersionNum(file string,
 		err = rows.Scan(&num)
 		if err != nil {
 			err = newErr("Error scanning row.", err)
-			log.Println(err)
+			log.Print(err)
 		}
 	}
 	return num
@@ -122,6 +122,8 @@ func (ctx *Context) setupConfig() *Context {
 	ctx.Archive = ctx.LocalTop + "/archive"
 	ctx.TempNew = ctx.UserHome + "/tempNew"
 	ctx.TempOld = ctx.UserHome + "/tempOld"
+	os.MkdirAll(ctx.TempNew, os.ModePerm)
+	os.MkdirAll(ctx.TempOld, os.ModePerm)
 
 	serv := os.Getenv("SERVER")
 	if serv != "" {
@@ -153,7 +155,7 @@ func commandWithOutput(input string) (string, string, error) {
 }
 
 func commandVerbose(input string) (string, string, error) {
-	log.Println("Command: " + input)
+	log.Print("Command: " + input)
 	stdout, stderr, err := commandWithOutput(input)
 	if stdout != "" {
 		log.Print(stdout)
@@ -163,43 +165,61 @@ func commandVerbose(input string) (string, string, error) {
 	}
 	if err != nil {
 		err = newErr("Error in running command.", err)
-		log.Println(err)
+		log.Print(err)
 	} else {
-		log.Println("Command ran with no errors.")
+		log.Print("Command ran with no errors.")
+	}
+	return stdout, stderr, err
+}
+
+func commandVerboseOnErr(input string) (string, string, error) {
+	log.Print("Command: " + input)
+	stdout, stderr, err := commandWithOutput(input)
+	if err != nil {
+		if stdout != "" {
+			log.Print(stdout)
+		}
+		if stderr != "" {
+			log.Print(stderr)
+		}
+		err = newErr("Error in running command.", err)
+		log.Print(err)
+	} else {
+		log.Print("Command ran with no errors.")
 	}
 	return stdout, stderr, err
 }
 
 func commandStreaming(input string) {
 	var err error
-	log.Println("Command: " + input)
+	log.Print("Command: " + input)
 	cmd := exec.Command("bash", "-c", input)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		err = newErr("Couldn't get from stdout.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		err = newErr("Couldn't get from stderr.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
 	go func() {
 		for scanner.Scan() {
-			log.Println(scanner.Text())
+			log.Print(scanner.Text())
 		}
 	}()
 
 	err = cmd.Start()
 	if err != nil {
 		err = newErr("Error in starting command.", err)
-		log.Println(err)
+		log.Print(err)
 	}
 	err = cmd.Wait()
 	if err != nil {
 		err = newErr("Error in command execution.", err)
-		log.Println(err)
+		log.Print(err)
 	}
-	log.Println("Command finished executing.")
+	log.Print("Command finished executing.")
 }
