@@ -8,6 +8,7 @@ import (
 	"time"
 	"strings"
 	"runtime"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // MountFuse mounts the virtual directory. Uses goofys tool to mount
@@ -43,7 +44,7 @@ func (ctx *Context) checkMount() {
 	if runtime.GOOS == "linux" {
 		cmd = "mountpoint "
 	}
-	_, stderr, err := commandVerbose(cmd + ctx.LocalTop)
+	_, stderr, err := commandVerboseOnErr(cmd + ctx.LocalTop)
 	if strings.Contains(stderr, "Transport endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
 		log.Fatal("Can't connect to mount point.")
 	}
