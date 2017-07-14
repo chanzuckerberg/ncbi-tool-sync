@@ -6,11 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
+	"os/user"
 	"strings"
 	"testing"
-	"os/user"
-	"log"
 	"time"
 )
 
@@ -191,20 +191,20 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 2, md.Version)
 	assert.Equal(t, "2011-09-16 16:33:49", md.ModTime.String)
-	_, err = os.Stat(ctx.LocalTop+"/blast/demo/igblast/readme")
+	_, err = os.Stat(ctx.LocalTop + "/blast/demo/igblast/readme")
 	rows.Next()
 	rows.Scan(&md.Path, &md.Version, &md.ModTime, &md.ArchiveKey)
 	assert.Equal(t, "/blast/demo/igblast/readme", md.Path)
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "e0942d53c65bb568d200f25b3042fbc7", md.ArchiveKey.String)
-	_, err = os.Stat(ctx.LocalTop+"/archive/e0942d53c65bb568d200f25b3042fbc7")
+	_, err = os.Stat(ctx.LocalTop + "/archive/e0942d53c65bb568d200f25b3042fbc7")
 
-	b, err := ioutil.ReadFile(ctx.LocalTop+"/archive/e0942d53c65bb568d200f25b3042fbc7")
+	b, err := ioutil.ReadFile(ctx.LocalTop + "/archive/e0942d53c65bb568d200f25b3042fbc7")
 	if !strings.Contains(string(b), "FILE WAS MODIFIED") {
 		t.Errorf("Archive copy doesn't contain string.")
 	}
-	b, err = ioutil.ReadFile(ctx.LocalTop+"/blast/demo/igblast/readme")
+	b, err = ioutil.ReadFile(ctx.LocalTop + "/blast/demo/igblast/readme")
 	if strings.Contains(string(b), "FILE WAS MODIFIED") {
 		t.Errorf("New version is wrong.")
 	}
@@ -228,8 +228,8 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	time.Sleep(time.Duration(5)*time.Second)
-	_, err = callCommand("touch " + ctx.LocalTop+ "/blast/demo/igblast/testfile")
+	time.Sleep(time.Duration(5) * time.Second)
+	_, err = callCommand("touch " + ctx.LocalTop + "/blast/demo/igblast/testfile")
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16 16:33:49')")
 
 	// Call our function to test
@@ -249,13 +249,13 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 	assert.Equal(t, 1, md.Version)
 	assert.Equal(t, "2010-09-16 16:33:49", md.ModTime.String)
 	assert.Equal(t, "d37650ecfee9f1acdb11699503407acf", md.ArchiveKey.String)
-	time.Sleep(time.Duration(10)*time.Second)
-	_, err = os.Stat(ctx.LocalTop+"/blast/demo/igblast/testfile")
+	time.Sleep(time.Duration(10) * time.Second)
+	_, err = os.Stat(ctx.LocalTop + "/blast/demo/igblast/testfile")
 	if err == nil {
 		t.Errorf("File wasn't deleted from current folder properly.")
 		t.FailNow()
 	}
-	_, err = os.Stat(ctx.LocalTop+"/archive/d37650ecfee9f1acdb11699503407acf")
+	_, err = os.Stat(ctx.LocalTop + "/archive/d37650ecfee9f1acdb11699503407acf")
 	if err != nil {
 		t.Errorf("File isn't in archive properly.")
 		t.FailNow()

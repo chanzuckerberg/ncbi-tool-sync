@@ -3,12 +3,12 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"log"
 	"os"
-	"time"
-	"strings"
 	"runtime"
-	_ "github.com/go-sql-driver/mysql"
+	"strings"
+	"time"
 )
 
 // MountFuse mounts the virtual directory. Uses goofys tool to mount
@@ -28,7 +28,7 @@ func (ctx *Context) MountFuse() error {
 		log.Print(err)
 		return err
 	}
-	time.Sleep(time.Duration(3)*time.Second)
+	time.Sleep(time.Duration(3) * time.Second)
 	return err
 }
 
@@ -36,7 +36,7 @@ func (ctx *Context) MountFuse() error {
 // directory may already be unmounted.
 func (ctx *Context) UnmountFuse() {
 	commandVerboseOnErr("sudo umount " + ctx.LocalTop)
-	time.Sleep(time.Duration(3)*time.Second)
+	time.Sleep(time.Duration(3) * time.Second)
 }
 
 func (ctx *Context) checkMount() {
@@ -45,17 +45,21 @@ func (ctx *Context) checkMount() {
 		cmd = "mountpoint "
 	}
 	_, stderr, err := commandVerboseOnErr(cmd + ctx.LocalTop)
-	if strings.Contains(stderr, "Transport endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
+	if strings.Contains(stderr, "Transport endpoint is not "+
+		"connected") || strings.Contains(stderr, "is not a "+
+		"mountpoint") || err != nil {
 		log.Fatal("Can't connect to mount point.")
 	}
 	log.Print("Mount check successful.")
 }
 
+// Starts goroutine for checking the FUSE connection continuously and trying
+// to reconnect.
 func (ctx *Context) checkMountRepeat(quit chan bool) {
 	go func() {
 		for {
 			select {
-			case <- quit:
+			case <-quit:
 				return
 			default:
 				cmd := "ls "
@@ -63,14 +67,16 @@ func (ctx *Context) checkMountRepeat(quit chan bool) {
 					cmd = "mountpoint "
 				}
 				stdout, stderr, err := commandWithOutput(cmd + ctx.LocalTop)
-				if strings.Contains(stderr, "endpoint is not connected") || strings.Contains(stderr, "is not a mountpoint") || err != nil {
+				if strings.Contains(stderr, "endpoint is not "+
+					"connected") || strings.Contains(stderr, "is not "+
+					"a mountpoint") || err != nil {
 					log.Print(stdout)
 					log.Print(stderr)
 					log.Print("Can't connect to mount point.")
 					ctx.UnmountFuse()
 					ctx.MountFuse()
 				}
-				time.Sleep(time.Duration(5)*time.Second)
+				time.Sleep(time.Duration(5) * time.Second)
 			}
 		}
 	}()
