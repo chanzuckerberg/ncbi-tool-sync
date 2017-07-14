@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func (ctx *Context) getModTime(pathName string,
 func (ctx *Context) dbNewVersion(pathName string,
 	cache map[string]map[string]string) error {
 	var err error
-	log.Print("Handling new version of: "+pathName)
+	log.Print("Handling new version of: " + pathName)
 
 	// Set version number
 	versionNum := 1
@@ -85,16 +84,14 @@ func (ctx *Context) dbNewVersion(pathName string,
 	if err != nil {
 		return err
 	}
-	query := ""
 	if modTime != "" {
-		query = fmt.Sprintf("insert into entries(PathName, "+
-			"VersionNum, DateModified) values('%s', %d, '%s')", pathName,
+		_, err = ctx.Db.Query("insert into entries(PathName, "+
+			"VersionNum, DateModified) values(?, ?, ?)", pathName,
 			versionNum, modTime)
 	} else {
-		query = fmt.Sprintf("insert into entries(PathName, "+
-			"VersionNum) values('%s', %d)", pathName, versionNum)
+		_, err = ctx.Db.Query("insert into entries(PathName, "+
+			"VersionNum) values(?, ?)", pathName, versionNum)
 	}
-	_, err = ctx.Db.Exec(query)
 	if err != nil {
 		err = newErr("Error in making query.", err)
 		log.Print(err)
@@ -129,7 +126,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 				return nil
 			}
 			if err != nil {
-				err = newErr("Error in walking file: " + path + ".", err)
+				err = newErr("Error in walking file: "+path+".", err)
 				log.Print(err)
 				return err
 			}

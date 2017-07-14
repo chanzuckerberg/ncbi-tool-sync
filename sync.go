@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/jasonlvhit/gocron"
 	"log"
-	"strings"
 	"os"
 	"path/filepath"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"strings"
 )
 
 // Parses the Rsync itemized output for new, modified, and deleted
@@ -47,6 +48,14 @@ func (ctx *Context) callSyncFlow() error {
 	var err error
 	log.Print("Start of sync flow...")
 
+	// Offset scheduling of next run so it'll only schedule after one finishes
+	gocron.Clear()
+	defer func() {
+		gocron.Every(1).Hour().Do(ctx.callSyncFlow)
+		log.Print("Next run has been scheduled...")
+		<-gocron.Start()
+	}()
+
 	// Dry run analysis stage
 	newF, modified, deleted, err := ctx.dryRunStage()
 	if err != nil {
@@ -70,17 +79,20 @@ func (ctx *Context) callSyncFlow() error {
 	return err
 }
 
-func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted []string) {
+// Executes the actual file operations on local disk and S3.
+func (ctx *Context) fileOperationStage(newF []string,
+	modified []string, deleted []string) {
 	log.Print("Beginning file operations stage.")
 
 	// Copy from NCBI remote to local temp folder
 	log.Print("Going to copy new and modified files from remote...")
-	ctx.copyFromRemote(newF)
-	ctx.copyFromRemote(modified)
+	ctx.copyFilesFromRemote(newF)
+	ctx.copyFilesFromRemote(modified)
 
 	// Move files around on S3 to be replaced. Moves the to-be-replaced
 	// files to the archive folder on S3 and renames them.
-	log.Print("Going to move around modified and deleted files on remote...")
+	log.Print("Going to move around modified and deleted files on " +
+		"remote...")
 	ctx.moveOldFiles(modified)
 	ctx.moveOldFiles(deleted)
 
@@ -95,6 +107,8 @@ func (ctx *Context) fileOperationStage(newF []string, modified []string, deleted
 	ctx.putObjects(modified)
 }
 
+// Analysis stage of getting itemized output from rsync and parsing for new,
+// modified, and deleted files.
 func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	var err error
 	var newF, modified, deleted []string
@@ -143,11 +157,13 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	return newF, modified, deleted, err
 }
 
+// Archives a file by moving it from the current storage to the archive
+// folder under an archiveKey name and recording it in the db.
 func (ctx *Context) moveOldFile(file string) error {
 	// Setup
 	// Ex: $HOME/remote/blast/db/README
 	localPath := ctx.LocalTop + file
-	log.Print("Archiving old version of: "+file)
+	log.Print("Archiving old version of: " + file)
 	num := ctx.lastVersionNum(file, false)
 	key, err := ctx.generateHash(localPath, file, num)
 	if err != nil {
@@ -178,7 +194,8 @@ func (ctx *Context) moveOldFile(file string) error {
 	} else {
 		log.Print("Large file handling...")
 		// Handle via S3 command line tool
-		cmd := fmt.Sprintf("aws s3 mv s3://%s%s s3://%s/archive/%s", ctx.Bucket, file, ctx.Bucket, key)
+		template := "aws s3 mv s3://%s%s s3://%s/archive/%s"
+		cmd := fmt.Sprintf(template, ctx.Bucket, file, ctx.Bucket, key)
 		_, _, err = commandVerbose(cmd)
 		if err != nil {
 			err = newErr("Error in moving file on S3 via CLI.", err)
@@ -192,7 +209,8 @@ func (ctx *Context) moveOldFile(file string) error {
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
 	log.Print("Db query: " + query)
-	_, err = ctx.Db.Exec(query)
+	_, err = ctx.Db.Query("update entries set ArchiveKey=? where "+
+		"PathName=? and VersionNum=?;", key, file, num)
 	if err != nil {
 		err = newErr("Error in updating db entry.", err)
 		log.Print(err)
@@ -200,28 +218,7 @@ func (ctx *Context) moveOldFile(file string) error {
 	return err
 }
 
-func (ctx *Context) getObject(file string) error {
-	svc := s3manager.NewDownloader(session.Must(session.NewSession()))
-	os.MkdirAll(ctx.TempOld, os.ModePerm)
-	onDisk, err := os.Create(ctx.TempOld + "/temp")
-	if err != nil {
-		err = newErr("Error in creating temp file.", err)
-		log.Print(err)
-		return err
-	}
-	log.Print("File retrieval: " + file)
-	output, err := svc.Download(onDisk, &s3.GetObjectInput{
-		Bucket: aws.String(ctx.Bucket),
-		Key: aws.String(file),
-	})
-	log.Print(output)
-	if err != nil {
-		err = newErr("Error in retrieving file from S3.", err)
-		log.Print(err)
-	}
-	return err
-}
-
+// Moves to-be-replaced files to archive folder on S3.
 func (ctx *Context) moveOldFiles(files []string) error {
 	for _, file := range files {
 		ctx.moveOldFile(file)
@@ -229,27 +226,35 @@ func (ctx *Context) moveOldFiles(files []string) error {
 	return nil
 }
 
-func (ctx *Context) copyFromRemote(files []string) error {
+// Copies list of files from remote server to local disk folder with rsync.
+func (ctx *Context) copyFilesFromRemote(files []string) error {
 	for _, file := range files {
-		source := fmt.Sprintf("%s%s", ctx.Server, file)
-		// Ex: $HOME/tempNew/blast/db
-		log.Print("Local dir to make: " + ctx.TempNew + filepath.Dir(file))
-		err := os.MkdirAll(ctx.TempNew + filepath.Dir(file), os.ModePerm)
-		if err != nil {
-			err = newErr("Couldn't make dir.", err)
-			log.Print(err)
-			return err
-		}
-		// Ex: $HOME/tempNew/blast/db/README
-		dest := fmt.Sprintf("%s%s", ctx.TempNew, file)
-		template := "rsync -arzv --size-only --no-motd --progress " +
-			"--copy-links %s %s"
-		cmd := fmt.Sprintf(template, source, dest)
-		commandStreaming(cmd)
+		ctx.copyFileFromRemote(file)
 	}
 	return nil
 }
 
+// Copies one file from remote server to local disk folder with rsync.
+func (ctx *Context) copyFileFromRemote(file string) error {
+	source := fmt.Sprintf("%s%s", ctx.Server, file)
+	// Ex: $HOME/tempNew/blast/db
+	log.Print("Local dir to make: " + ctx.TempNew + filepath.Dir(file))
+	err := os.MkdirAll(ctx.TempNew+filepath.Dir(file), os.ModePerm)
+	if err != nil {
+		err = newErr("Couldn't make dir.", err)
+		log.Print(err)
+		return err
+	}
+	// Ex: $HOME/tempNew/blast/db/README
+	dest := fmt.Sprintf("%s%s", ctx.TempNew, file)
+	template := "rsync -arzv --size-only --no-motd --progress " +
+		"--copy-links %s %s"
+	cmd := fmt.Sprintf(template, source, dest)
+	commandStreaming(cmd)
+	return nil
+}
+
+// Uploads list of files from local disk to S3 folder.
 func (ctx *Context) putObjects(files []string) error {
 	for _, file := range files {
 		ctx.putObject(ctx.TempNew+file, file)
@@ -257,6 +262,7 @@ func (ctx *Context) putObjects(files []string) error {
 	return nil
 }
 
+// Uploads one file from local disk to S3 with uploadKey.
 func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 	// Setup
 	sess := session.Must(session.NewSession())
@@ -273,11 +279,11 @@ func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 	// Upload to S3
 	uploader := s3manager.NewUploader(sess)
 	output, err := uploader.Upload(&s3manager.UploadInput{
-		Body:                 local,
-		Bucket:               aws.String(ctx.Bucket),
-		Key:                  aws.String(uploadKey),
+		Body:   local,
+		Bucket: aws.String(ctx.Bucket),
+		Key:    aws.String(uploadKey),
 	})
-	log.Print(output)
+	awsOutput(fmt.Sprintf("%#v", output))
 	if err != nil {
 		err = newErr(fmt.Sprintf("Error in file upload of %s to S3.", onDisk), err)
 		log.Print(err)
@@ -289,6 +295,7 @@ func (ctx *Context) putObject(onDisk string, uploadKey string) error {
 	return err
 }
 
+// Copies a file on S3 from the CopySource to the archive folder with key.
 func (ctx *Context) copyOnS3(file string, key string, svc *s3.S3) error {
 	params := &s3.CopyObjectInput{
 		Bucket:     aws.String(ctx.Bucket),
@@ -296,7 +303,7 @@ func (ctx *Context) copyOnS3(file string, key string, svc *s3.S3) error {
 		Key:        aws.String("archive/" + key),
 	}
 	output, err := svc.CopyObject(params)
-	log.Print(output)
+	awsOutput(output.GoString())
 	if err != nil {
 		err = newErr(fmt.Sprintf("Error in copying %s on S3.", file), err)
 		log.Print(err)
@@ -304,6 +311,7 @@ func (ctx *Context) copyOnS3(file string, key string, svc *s3.S3) error {
 	return err
 }
 
+// Gets the size of a file on S3.
 func (ctx *Context) fileSizeOnS3(file string, svc *s3.S3) (int, error) {
 	var result int
 	input := &s3.HeadObjectInput{
@@ -311,7 +319,7 @@ func (ctx *Context) fileSizeOnS3(file string, svc *s3.S3) (int, error) {
 		Key:    aws.String(file),
 	}
 	output, err := svc.HeadObject(input)
-	log.Print(output)
+	awsOutput(output.GoString())
 	if err != nil {
 		err = newErr("Error in HeadObject request.", err)
 		log.Print(err)
@@ -321,6 +329,7 @@ func (ctx *Context) fileSizeOnS3(file string, svc *s3.S3) (int, error) {
 	return result, err
 }
 
+// Deletes a list of objects on S3.
 func (ctx *Context) deleteObjects(files []string) error {
 	for _, file := range files {
 		ctx.deleteObject(file)
@@ -328,6 +337,7 @@ func (ctx *Context) deleteObjects(files []string) error {
 	return nil
 }
 
+// Deletes an object on S3.
 func (ctx *Context) deleteObject(file string) error {
 	// Setup
 	svc := s3.New(session.Must(session.NewSession()))
@@ -337,7 +347,7 @@ func (ctx *Context) deleteObject(file string) error {
 	}
 
 	output, err := svc.DeleteObject(input)
-	log.Print(output)
+	awsOutput(output.GoString())
 	if err != nil {
 		err = newErr("Error in deleting object.", err)
 		log.Print(err)

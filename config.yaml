@@ -1,3 +1,3 @@
-Server: mirrors.vbi.vt.edu::ftp.ncbi.nih.gov
+Server: rsync://ftp.ncbi.nih.gov
 SourcePath: /blast/db
 Bucket: czbiohub-ncbi-store

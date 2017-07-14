@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/md5"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/afero"
@@ -10,22 +14,11 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"os/exec"
-	"time"
-	"os/user"
-	"bytes"
-	"bufio"
 	"os"
-	"errors"
+	"os/exec"
+	"os/user"
+	"strings"
 )
-
-// Generates a folder name from the current datetime.
-func timeName() string {
-	t := time.Now()
-	result := fmt.Sprintf("backup-%d-%02d-%02d-%02d-%02d-%02d",
-		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
-	return result
-}
 
 // Gets the full path of the user's home directory
 func getUserHome() string {
@@ -51,36 +44,29 @@ func (ctx *Context) generateHash(origPath string, path string,
 		return result, err
 	}
 
-	// Add the file contents
-	//file, err := ctx.os.Open(origPath)
-	//if err != nil {
-	//	return result, err
-	//}
-	//defer file.Close()
-	//if _, err := io.Copy(hash, file); err != nil {
-	//	return result, err
-	//}
-
 	// Generate checksum
 	hashInBytes := hash.Sum(nil)[:16]
 	result = hex.EncodeToString(hashInBytes)
 	return result, nil
 }
 
-// Finds the latest version number of the file. Queries the database
-// for the latest version of the file.
-func (ctx *Context) lastVersionNum(file string,
-	inclArchive bool) int {
+// Finds the latest version number of the file. Queries the database for the
+// latest version of the file.
+func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
 	num := -1
-	archive := ""
-	if !inclArchive {
-		// Specify not to include archived entries
-		archive = "and ArchiveKey is null "
-	}
+	var err error
+	var rows *sql.Rows
 
-	query := fmt.Sprintf("select VersionNum from entries "+
-		"where PathName='%s' %sorder by VersionNum desc", file, archive)
-	rows, err := ctx.Db.Query(query)
+	// Query
+	if inclArchive {
+		rows, err = ctx.Db.Query("select VersionNum from entries "+
+			"where PathName=%s order by VersionNum desc", file)
+	} else {
+		// Specify not to include archived entries
+		rows, err = ctx.Db.Query("select VersionNum from entries "+
+			"where PathName=%s and ArchiveKey is null order by VersionNum desc",
+			file)
+	}
 	if err != nil {
 		err = newErr("Error in getting VersionNum.", err)
 		log.Print(err)
@@ -137,13 +123,18 @@ func (ctx *Context) setupConfig() *Context {
 	return ctx
 }
 
+// Formats a custom string and error message into one error.
 func newErr(input string, err error) error {
 	return errors.New(input + " " + err.Error())
 }
 
-// Executes a shell command on the local machine.
-func callCommand(input string) ([]byte, error) {
-	return exec.Command("sh", "-cx", input).CombinedOutput()
+// Outputs AWS response if not empty.
+func awsOutput(input string) {
+	// Skip if empty response
+	if strings.Replace(input, " ", "", -1) == "{}" {
+		return
+	}
+	log.Print("AWS response: " + input)
 }
 
 // Executes a shell command and returns the stdout, stderr, and err
@@ -158,6 +149,7 @@ func commandWithOutput(input string) (string, string, error) {
 	return outResp, errResp, err
 }
 
+// Outputs a system command to log with stdout, stderr, and err output.
 func commandVerbose(input string) (string, string, error) {
 	log.Print("Command: " + input)
 	stdout, stderr, err := commandWithOutput(input)
@@ -176,6 +168,7 @@ func commandVerbose(input string) (string, string, error) {
 	return stdout, stderr, err
 }
 
+// Outputs a system command to log with all output on error.
 func commandVerboseOnErr(input string) (string, string, error) {
 	log.Print("Command: " + input)
 	stdout, stderr, err := commandWithOutput(input)
@@ -194,6 +187,7 @@ func commandVerboseOnErr(input string) (string, string, error) {
 	return stdout, stderr, err
 }
 
+// Outputs a system command to a streaming log from stdout and stderr pipes.
 func commandStreaming(input string) {
 	var err error
 	log.Print("Command: " + input)
