@@ -48,6 +48,14 @@ func (ctx *Context) callSyncFlow() error {
 	var err error
 	log.Print("Start of sync flow...")
 
+	// Check db
+	err = ctx.Db.Ping()
+	if err != nil {
+		log.Print(err)
+		err = newErr("Failed to ping database. Aborting run.", err)
+		return err
+	}
+
 	// Offset scheduling of next run so it'll only schedule after one finishes
 	gocron.Clear()
 	defer func() {
@@ -209,7 +217,7 @@ func (ctx *Context) moveOldFile(file string) error {
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
 	log.Print("Db query: " + query)
-	_, err = ctx.Db.Query("update entries set ArchiveKey=? where "+
+	_, err = ctx.Db.Exec("update entries set ArchiveKey=? where "+
 		"PathName=? and VersionNum=?;", key, file, num)
 	if err != nil {
 		err = newErr("Error in updating db entry.", err)

@@ -33,10 +33,7 @@ func (ctx *Context) dbNewVersions(files []string) error {
 	cache := make(map[string]map[string]string)
 
 	for _, file := range files {
-		err := ctx.dbNewVersion(file, cache)
-		if err != nil {
-			log.Print(err) // Only log the error and continue
-		}
+		ctx.dbNewVersion(file, cache)
 	}
 	return nil
 }
@@ -80,27 +77,18 @@ func (ctx *Context) dbNewVersion(pathName string,
 	modTime := ctx.getModTime(pathName, cache)
 
 	// Insert into database
-	tx, err := ctx.Db.Begin()
-	if err != nil {
-		return err
-	}
 	if modTime != "" {
-		_, err = ctx.Db.Query("insert into entries(PathName, "+
+		_, err = ctx.Db.Exec("insert into entries(PathName, "+
 			"VersionNum, DateModified) values(?, ?, ?)", pathName,
 			versionNum, modTime)
 	} else {
-		_, err = ctx.Db.Query("insert into entries(PathName, "+
+		_, err = ctx.Db.Exec("insert into entries(PathName, "+
 			"VersionNum) values(?, ?)", pathName, versionNum)
 	}
 	if err != nil {
-		err = newErr("Error in making query.", err)
+		err = newErr("Error in new version query.", err)
 		log.Print(err)
 		return err
-	}
-	err = tx.Commit()
-	if err != nil {
-		err = newErr("Error committing transaction.", err)
-		log.Print(err)
 	}
 	return err
 }

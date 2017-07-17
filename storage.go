@@ -112,7 +112,7 @@ func (ctx *Context) SetupDatabase() {
 		log.Fatal("Failed to ping database.")
 	}
 	ctx.CreateTable()
-	log.Print("Successfully connected database.")
+	log.Print("Successfully checked database.")
 }
 
 // CreateTable creates the table and schema in the db if needed.
