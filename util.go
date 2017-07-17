@@ -60,11 +60,11 @@ func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
 	// Query
 	if inclArchive {
 		rows, err = ctx.Db.Query("select VersionNum from entries "+
-			"where PathName=%s order by VersionNum desc", file)
+			"where PathName=? order by VersionNum desc", file)
 	} else {
 		// Specify not to include archived entries
 		rows, err = ctx.Db.Query("select VersionNum from entries "+
-			"where PathName=%s and ArchiveKey is null order by VersionNum desc",
+			"where PathName=? and ArchiveKey is null order by VersionNum desc",
 			file)
 	}
 	if err != nil {
@@ -131,7 +131,8 @@ func newErr(input string, err error) error {
 // Outputs AWS response if not empty.
 func awsOutput(input string) {
 	// Skip if empty response
-	if strings.Replace(input, " ", "", -1) == "{}" {
+	snip := strings.Replace(input, " ", "", -1)
+	if strings.Replace(snip, "\n", "", -1) == "{}" {
 		return
 	}
 	log.Print("AWS response: " + input)
