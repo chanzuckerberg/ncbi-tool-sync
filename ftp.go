@@ -2,17 +2,17 @@ package main
 
 import (
 	"github.com/jlaffaye/ftp"
-	"time"
 	"log"
+	"time"
 )
 
 // Gets a listing of files and modified times from the FTP server.
 // Returns a map of the file pathName to the modTime.
-func (ctx *Context) getServerListing(dir string) (map[string]string,
+func getServerListing(dir string) (map[string]string,
 	error) {
 	// Open FTP connection
 	FileToTime := make(map[string]string)
-	client, err := ctx.connectToServer()
+	client, err := connectToServer()
 	if err != nil {
 		err = newErr("Error in connecting to FTP server.", err)
 		log.Print(err)
@@ -35,7 +35,7 @@ func (ctx *Context) getServerListing(dir string) (map[string]string,
 }
 
 // Connects to the FTP server and returns the client.
-func (ctx *Context) connectToServer() (*ftp.ServerConn, error) {
+func connectToServer() (*ftp.ServerConn, error) {
 	addr := "ftp.ncbi.nih.gov:21"
 	client, err := ftp.Dial(addr)
 	if err != nil {

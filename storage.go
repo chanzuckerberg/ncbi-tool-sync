@@ -13,7 +13,7 @@ import (
 
 // MountFuse mounts the virtual directory. Uses goofys tool to mount
 // S3 as a local folder for syncing operations.
-func (ctx *Context) MountFuse() error {
+func MountFuse(ctx *Context) error {
 	log.Print("Starting FUSE mount...")
 	_ = ctx.os.Mkdir(ctx.LocalTop, os.ModePerm)
 	goofys := os.Getenv("GOOFYS")
@@ -34,12 +34,13 @@ func (ctx *Context) MountFuse() error {
 
 // UnmountFuse unmounts the virtual directory. Ignores errors since
 // directory may already be unmounted.
-func (ctx *Context) UnmountFuse() {
+func UnmountFuse(ctx *Context) {
 	commandVerboseOnErr("sudo umount " + ctx.LocalTop)
 	time.Sleep(time.Duration(3) * time.Second)
 }
 
-func (ctx *Context) checkMount() {
+// checkMount checks if the FUSE endpoint is connected.
+func checkMount(ctx *Context) {
 	cmd := "ls "
 	if runtime.GOOS == "linux" {
 		cmd = "mountpoint "
@@ -55,7 +56,7 @@ func (ctx *Context) checkMount() {
 
 // Starts goroutine for checking the FUSE connection continuously and trying
 // to reconnect.
-func (ctx *Context) checkMountRepeat(quit chan bool) {
+func checkMountRepeat(ctx *Context, quit chan bool) {
 	go func() {
 		for {
 			select {
@@ -73,8 +74,8 @@ func (ctx *Context) checkMountRepeat(quit chan bool) {
 					log.Print(stdout)
 					log.Print(stderr)
 					log.Print("Can't connect to mount point.")
-					ctx.UnmountFuse()
-					ctx.MountFuse()
+					UnmountFuse(ctx)
+					MountFuse(ctx)
 				}
 				time.Sleep(time.Duration(5) * time.Second)
 			}
@@ -82,8 +83,8 @@ func (ctx *Context) checkMountRepeat(quit chan bool) {
 	}()
 }
 
-// SetupDatabase sets up the db and checks connection conditions
-func (ctx *Context) SetupDatabase() {
+// setupDatabase sets up the db and checks connection conditions
+func setupDatabase(ctx *Context) {
 	var err error
 	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
 	if isDevelopment {
@@ -111,12 +112,12 @@ func (ctx *Context) SetupDatabase() {
 		log.Print(err)
 		log.Fatal("Failed to ping database.")
 	}
-	ctx.CreateTable()
+	CreateTable(ctx)
 	log.Print("Successfully checked database.")
 }
 
 // CreateTable creates the table and schema in the db if needed.
-func (ctx *Context) CreateTable() {
+func CreateTable(ctx *Context) {
 	query := "CREATE TABLE IF NOT EXISTS entries (" +
 		"PathName VARCHAR(500) NOT NULL, " +
 		"VersionNum INT NOT NULL, " +

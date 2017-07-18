@@ -10,18 +10,17 @@ import (
 // and deleted files are processed by archiveOldVersions in the temp
 // directory. New and modified files have new versions to be added to
 // the db. Temp folder is deleted after handling.
-func (ctx *Context) dbUpdateStage(newF []string, modified []string) error {
-	var err error
+func dbUpdateStage(ctx *Context, newF []string, modified []string) error {
 	log.Print("Beginning db update stage.")
 
 	// Add new or modified files as db entries
-	err = ctx.dbNewVersions(newF)
+	err := dbNewVersions(ctx, newF)
 	if err != nil {
 		err = newErr("Error in adding new files to db.", err)
 		log.Print(err)
 		return err
 	}
-	err = ctx.dbNewVersions(modified)
+	err = dbNewVersions(ctx, modified)
 	if err != nil {
 		err = newErr("Error in adding new versions of modified files to db.", err)
 		log.Print(err)
@@ -31,28 +30,27 @@ func (ctx *Context) dbUpdateStage(newF []string, modified []string) error {
 }
 
 // Handles a list of files with new versions.
-func (ctx *Context) dbNewVersions(files []string) error {
+func dbNewVersions(ctx *Context, files []string) error {
 	// Cache is a map of directory names to a map of file names to mod
 	// times.
 	cache := make(map[string]map[string]string)
 
 	for _, file := range files {
-		ctx.dbNewVersion(file, cache)
+		dbNewVersion(ctx, file, cache)
 	}
 	return nil
 }
 
 // Gets the date modified times from the FTP server utilizing a
 // directory listing cache.
-func (ctx *Context) getModTime(pathName string,
-	cache map[string]map[string]string) string {
+func getModTime(pathName string, cache map[string]map[string]string) string {
 	dir := filepath.Dir(pathName)
 	file := filepath.Base(pathName)
 	_, present := cache[dir]
 	var err error
 	if !present {
 		// Get listing from server
-		cache[dir], err = ctx.getServerListing(dir)
+		cache[dir], err = getServerListing(dir)
 		if err != nil {
 			err = newErr("Error in getting listing from FTP server.", err)
 			log.Print(err)
@@ -65,21 +63,21 @@ func (ctx *Context) getModTime(pathName string,
 // version number for this new entry. Gets the datetime modified from
 // the FTP server as a workaround for the lack of date modified times
 // after syncing to S3. Adds the new entry into the db.
-func (ctx *Context) dbNewVersion(pathName string,
+func dbNewVersion(ctx *Context, pathName string,
 	cache map[string]map[string]string) error {
 	var err error
 	log.Print("Handling new version of: " + pathName)
 
 	// Set version number
 	versionNum := 1
-	prevNum := ctx.lastVersionNum(pathName, true)
+	prevNum := lastVersionNum(ctx, pathName, true)
 	if prevNum > -1 {
 		// Some version already exists
 		versionNum = prevNum + 1
 	}
 
 	// Set datetime modified using directory listing cache
-	modTime := ctx.getModTime(pathName, cache)
+	modTime := getModTime(pathName, cache)
 
 	// Insert into database
 	if modTime != "" {
@@ -101,7 +99,7 @@ func (ctx *Context) dbNewVersion(pathName string,
 // Ingests all the files in the working directory as new files. Used
 // for rebuilding the database or setup after a manual sync. Assumes
 // that the db is already connected.
-func (ctx *Context) ingestCurrentFiles() error {
+func ingestCurrentFiles(ctx *Context) error {
 	dest := ctx.LocalPath
 	_, err := ctx.os.Stat(dest)
 	if err != nil {
@@ -135,7 +133,7 @@ func (ctx *Context) ingestCurrentFiles() error {
 	}
 
 	fileList = fileList[1:] // Skip the folder itself
-	err = ctx.dbNewVersions(fileList)
+	err = dbNewVersions(ctx, fileList)
 	if err != nil {
 		err = newErr("Error in handling new versions.", err)
 		log.Print(err)
