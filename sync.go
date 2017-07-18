@@ -13,35 +13,6 @@ import (
 	"strings"
 )
 
-// Parses the Rsync itemized output for new, modified, and deleted
-// files. Follows the Rsync itemized changes syntax that specify
-// exactly which changes occurred or will occur.
-func parseChanges(out string, base string) ([]string,
-	[]string, []string) {
-	changes := strings.Split(out, "\n")
-	changes = changes[1 : len(changes)-4] // Remove junk lines
-
-	var newF, modified, deleted []string
-
-	for _, line := range changes {
-		col := strings.SplitN(line, " ", 2)
-		change := col[0]
-		file := col[1]
-		path := base + "/" + file
-		last := file[len(file)-1:]
-		if strings.HasPrefix(change, ">f+++++++") {
-			newF = append(newF, path)
-		} else if strings.HasPrefix(change, ">f") {
-			modified = append(modified, path)
-		} else if strings.HasPrefix(change, "*deleting") &&
-			last != "/" {
-			// Exclude folders
-			deleted = append(deleted, path)
-		}
-	}
-	return newF, modified, deleted
-}
-
 // Calls the Rsync workflow. Executes a dry run first for processing.
 // Then runs the real sync. Finally processes the changes.
 func (ctx *Context) callSyncFlow() error {
@@ -119,7 +90,6 @@ func (ctx *Context) fileOperationStage(newF []string,
 // modified, and deleted files.
 func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	var err error
-	var newF, modified, deleted []string
 	log.Print("Beginning dry run stage.")
 
 	// FUSE mounting steps
@@ -132,17 +102,52 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	quit := make(chan bool)
 	ctx.checkMountRepeat(quit)
 
-	// Construct Rsync parameters
+	// Dry runs
 	// Ex: ftp.ncbi.nih.gov/blast/db
 	source := fmt.Sprintf("%s%s/", ctx.Server, ctx.SourcePath)
+	newF, modified, deleted, err := ctx.dryRunRsync(source)
+	if err != nil {
+		err = newErr("Error in regular dry sync call.", err)
+		log.Print(err)
+		return newF, modified, deleted, err
+	}
+	newMD5, modifiedMD5, deletedMD5, err := ctx.dryRunRsyncMD5(source)
+	if err != nil {
+		err = newErr("Error in MD5 dry sync call.", err)
+		log.Print(err)
+		return newF, modified, deleted, err
+	}
+
+	// Terminate FUSE-checking goroutine
+	quit <- true
+
+	// Merge list of regular files and MD5 files
+	log.Print("Done with dry run...\nParsing changes...")
+	newF = append(newF, newMD5...)
+	modified = append(modified, modifiedMD5...)
+	deleted = append(deleted, deletedMD5...)
+
+	log.Printf("New on remote: %s", newF)
+	log.Printf("Modified on remote: %s", modified)
+	log.Printf("Deleted on remote: %s", deleted)
+	return newF, modified, deleted, err
+}
+
+// dryRunRsync runs a dry sync of main files from the source to local disk and
+// parses the itemized changes.
+func (ctx *Context) dryRunRsync(source string) ([]string, []string, []string,
+	error) {
+	// Setup
+	log.Print("Running main file dry run...")
+	var newF, modified, deleted []string
 	template := "rsync -arzv -n --itemize-changes --delete " +
 		"--size-only --no-motd --exclude '.*' --exclude 'cloud/*' " +
 		"--exclude 'nr.gz' --exclude 'nt.gz' --exclude " +
-		"'other_genomic.gz' --exclude 'refseq_genomic*' " +
+		"'other_genomic.gz' " +
 		"--copy-links --prune-empty-dirs %s %s"
 
 	// Dry run
-	err = os.MkdirAll(ctx.LocalPath, os.ModePerm)
+	err := os.MkdirAll(ctx.LocalPath, os.ModePerm)
 	if err != nil {
 		err = newErr("Couldn't make local path.", err)
 		log.Print(err)
@@ -152,16 +157,33 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 	log.Print("Beginning dry run execution...")
 	stdout, _, err := commandVerboseOnErr(cmd)
 	if err != nil {
+		err = newErr("Error in dry run execution on main files.", err)
+		log.Print(err)
 		return newF, modified, deleted, err
 	}
 
-	// FUSE connection no longer needed after this point.
-	quit <- true // Terminate FUSE-checking goroutine
-	log.Print("Done with dry run...\nParsing changes...")
 	newF, modified, deleted = parseChanges(stdout, ctx.SourcePath)
-	log.Printf("New on remote: %s", newF)
-	log.Printf("Modified on remote: %s", modified)
-	log.Printf("Deleted on remote: %s", deleted)
+	return newF, modified, deleted, err
+}
+
+// md5call is a separate dry rsync call for MD5 files. Workaround for running
+// with size-only on the main files, since MD5 files will not change in size.
+func (ctx *Context) dryRunRsyncMD5(source string) ([]string, []string, []string,
+	error) {
+	log.Print("Running md5 file dry run...")
+	var newF, modified, deleted []string
+	template := "rsync -arzv -n --itemize-changes --delete --no-motd --include " +
+		"'*.md5' --exclude 'cloud/*' --include '*/' --exclude '.*' --exclude '*' " +
+		"--copy-links --prune-empty-dirs %s %s"
+	cmd := fmt.Sprintf(template, source, ctx.LocalPath)
+	stdout, _, err := commandVerboseOnErr(cmd)
+	if err != nil {
+		err = newErr("Error in running MD5 syncing.", err)
+		log.Print(err)
+		return newF, modified, deleted, err
+	}
+
+	newF, modified, deleted = parseChanges(stdout, ctx.SourcePath)
 	return newF, modified, deleted, err
 }
 
@@ -169,16 +191,38 @@ func (ctx *Context) dryRunStage() ([]string, []string, []string, error) {
 // folder under an archiveKey name and recording it in the db.
 func (ctx *Context) moveOldFile(file string) error {
 	// Setup
-	// Ex: $HOME/remote/blast/db/README
-	localPath := ctx.LocalTop + file
+	var err error
+	localPath := ctx.LocalTop + file // Ex: $HOME/remote/blast/db/README
 	log.Print("Archiving old version of: " + file)
 	num := ctx.lastVersionNum(file, false)
+	if num < 1 {
+		log.Print("No previous unarchived version found in db.")
+		return err
+	}
 	key, err := ctx.generateHash(localPath, file, num)
 	if err != nil {
 		err = newErr("Error in generating checksum.", err)
 		log.Print(err)
 		return err
 	}
+	err = ctx.moveOldFileOperations(file, key)
+	if err != nil {
+		err = newErr("Error in operation to move old file to archive.", err)
+		log.Print(err)
+	}
+	err = ctx.moveOldFileDb(key, file, num)
+	if err != nil {
+		err = newErr("Error in updating db entry for old file.", err)
+		log.Print(err)
+	}
+	return err
+}
+
+// moveOldFileOperations moves the to-be-archived file on S3 to the archive
+// folder under a new file key.
+func (ctx *Context) moveOldFileOperations(file string,
+	key string) error {
+	var err error
 
 	// Move to archive folder
 	svc := s3.New(session.Must(session.NewSession()))
@@ -189,15 +233,17 @@ func (ctx *Context) moveOldFile(file string) error {
 	// Get file size
 	size, err := ctx.fileSizeOnS3(file, svc)
 	if err != nil {
+		err = newErr("Error in getting file size on S3.", err)
+		log.Print(err)
 		return err
 	}
 
-	// File operations
 	if size < 4500000000 {
 		// Handle via S3 SDK
 		err = ctx.copyOnS3(file, key, svc)
 		if err != nil {
-			return err
+			err = newErr("Error in copying file on S3.", err)
+			log.Print(err)
 		}
 	} else {
 		log.Print("Large file handling...")
@@ -208,16 +254,19 @@ func (ctx *Context) moveOldFile(file string) error {
 		if err != nil {
 			err = newErr("Error in moving file on S3 via CLI.", err)
 			log.Println(err)
-			return err
 		}
 	}
+	return err
+}
 
-	// Update the old db entry with archiveKey blob
+// moveOldFileDb updates the old db entry with a new archive blob for
+// reference.
+func (ctx *Context) moveOldFileDb(key string, file string, num int) error {
 	query := fmt.Sprintf(
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
 	log.Print("Db query: " + query)
-	_, err = ctx.Db.Exec("update entries set ArchiveKey=? where "+
+	_, err := ctx.Db.Exec("update entries set ArchiveKey=? where "+
 		"PathName=? and VersionNum=?;", key, file, num)
 	if err != nil {
 		err = newErr("Error in updating db entry.", err)
@@ -361,4 +410,33 @@ func (ctx *Context) deleteObject(file string) error {
 		log.Print(err)
 	}
 	return err
+}
+
+// Parses the Rsync itemized output for new, modified, and deleted
+// files. Follows the Rsync itemized changes syntax that specify
+// exactly which changes occurred or will occur.
+func parseChanges(out string, base string) ([]string,
+	[]string, []string) {
+	changes := strings.Split(out, "\n")
+	changes = changes[1 : len(changes)-4] // Remove junk lines
+
+	var newF, modified, deleted []string
+
+	for _, line := range changes {
+		col := strings.SplitN(line, " ", 2)
+		change := col[0]
+		file := col[1]
+		path := base + "/" + file
+		last := file[len(file)-1:]
+		if strings.HasPrefix(change, ">f+++++++") {
+			newF = append(newF, path)
+		} else if strings.HasPrefix(change, ">f") {
+			modified = append(modified, path)
+		} else if strings.HasPrefix(change, "*deleting") &&
+			last != "/" {
+			// Exclude folders
+			deleted = append(deleted, path)
+		}
+	}
+	return newF, modified, deleted
 }
