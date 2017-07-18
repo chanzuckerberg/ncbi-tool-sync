@@ -17,7 +17,6 @@ type Context struct {
 	Bucket     string `yaml:"Bucket"`
 	LocalPath  string // Ex: $HOME/remote/blast/db
 	LocalTop   string // Set as $HOME/remote
-	Archive    string // Set as $HOME/remote/archive
 	UserHome   string
 	TempNew    string // Set as $HOME/tempNew
 	TempOld    string // Set as $HOME/tempOld
@@ -34,16 +33,26 @@ func main() {
 	if err != nil {
 		log.Fatal("Couldn't open log file.")
 	}
-	defer logFile.Close()
+	defer func() {
+		err = logFile.Close()
+		if err != nil {
+			log.Print("Log file was not closed properly. ", err)
+		}
+	}()
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	// General config
 	ctx := Context{}
 	ctx.UserHome = getUserHome()
-	ctx.setupConfig()
-	ctx.SetupDatabase()
-	defer ctx.Db.Close()
+	setupConfig(&ctx)
+	setupDatabase(&ctx)
+	defer func() {
+		err = ctx.Db.Close()
+		if err != nil {
+			log.Print("Db was not closed properly. ", err)
+		}
+	}()
 
 	// Run immediately to start with. Next run is scheduled after completion.
-	ctx.callSyncFlow()
+	callSyncFlow(&ctx)
 }

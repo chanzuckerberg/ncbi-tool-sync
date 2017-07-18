@@ -32,14 +32,12 @@ func getUserHome() string {
 
 // Generates a hash for the file based on the name, version number,
 // and actual file contents.
-func (ctx *Context) generateHash(origPath string, path string,
-	num int) (string, error) {
+func generateHash(path string, num int) (string, error) {
 	// Add a header
-	var err error
 	var result string
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
 	hash := md5.New()
-	_, err = io.WriteString(hash, key)
+	_, err := io.WriteString(hash, key)
 	if err != nil {
 		err = newErr("Error in generating md5 hash.", err)
 		log.Print(err)
@@ -54,7 +52,7 @@ func (ctx *Context) generateHash(origPath string, path string,
 
 // Finds the latest version number of the file. Queries the database for the
 // latest version of the file.
-func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
+func lastVersionNum(ctx *Context, file string, inclArchive bool) int {
 	num := -1
 	var err error
 	var rows *sql.Rows
@@ -87,16 +85,16 @@ func (ctx *Context) lastVersionNum(file string, inclArchive bool) int {
 }
 
 // Loads the configuration file and starts db connection.
-func (ctx *Context) setupConfig() *Context {
+func setupConfig(ctx *Context) {
 	file, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Load from config file
 	err = yaml.Unmarshal(file, ctx)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Interface for file system
@@ -107,11 +105,10 @@ func (ctx *Context) setupConfig() *Context {
 
 	ctx.LocalTop = ctx.UserHome + "/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
-	ctx.Archive = ctx.LocalTop + "/archive"
 	ctx.TempNew = ctx.UserHome + "/tempNew"
 	ctx.TempOld = ctx.UserHome + "/tempOld"
-	os.MkdirAll(ctx.TempNew, os.ModePerm)
-	os.MkdirAll(ctx.TempOld, os.ModePerm)
+	ctx.os.MkdirAll(ctx.TempNew, os.ModePerm)
+	ctx.os.MkdirAll(ctx.TempOld, os.ModePerm)
 
 	serv := os.Getenv("SERVER")
 	if serv != "" {
@@ -121,8 +118,6 @@ func (ctx *Context) setupConfig() *Context {
 	if region == "" {
 		os.Setenv("AWS_REGION", "us-west-2")
 	}
-
-	return ctx
 }
 
 // Formats a custom string and error message into one error.
@@ -192,7 +187,6 @@ func commandVerboseOnErr(input string) (string, string, error) {
 
 // Outputs a system command to a streaming log from stdout and stderr pipes.
 func commandStreaming(input string) {
-	var err error
 	log.Print("Command: " + input)
 	cmd := exec.Command("bash", "-c", input)
 	stdout, err := cmd.StdoutPipe()

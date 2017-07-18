@@ -103,7 +103,6 @@ func SetupInitialState(t *testing.T) (Context, error) {
 	ctx.UserHome = usr.HomeDir
 	ctx.LocalTop = ctx.UserHome + "/test/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
-	ctx.Archive = ctx.LocalTop + "/archive"
 	ctx.Bucket = "czbiohub-jsheu-test"
 	ctx.TempNew = ctx.UserHome + "/test/tempNew"
 	err = ctx.os.MkdirAll(ctx.LocalTop+"/blast/demo/igblast", os.ModePerm)
@@ -139,7 +138,7 @@ func TestSyncNewAcceptance(t *testing.T) {
 	}
 
 	// Call our function to test
-	if err = ctx.callSyncFlow(); err != nil {
+	if err = callSyncFlow(&ctx); err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 
