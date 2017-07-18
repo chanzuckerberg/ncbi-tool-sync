@@ -22,13 +22,6 @@ type Metadata struct {
 	ArchiveKey sql.NullString
 }
 
-func TestCallCommand(t *testing.T) {
-	_, err := callCommand("ls")
-	if err != nil {
-		t.Error("Couldn't call ls")
-	}
-}
-
 func TestParseChanges(t *testing.T) {
 	out := "receiving file list ... done\n.d..tp... ./\n>f+++++++ blast_programming.ppt\n>f....... ieee_blast.final.ppt\n>f....... edited.ppt\n*deleting ieee_talk.pdf\n*deleting folder/\n.f..t.... mt_tback.tgz\n.f..t.... openmp_test.tar.gz\n>f+++++++ bingbong.ppt\n\nsent 414 bytes  received 2452 bytes  1910.67 bytes/sec\ntotal size is 6943964334  speedup is 2422876.60\n"
 	newNow, mod, del := parseChanges(out, "")
@@ -46,15 +39,10 @@ func TestProcessChangesTrivial(t *testing.T) {
 	ctx.LocalPath = "local/sub"
 	ctx.LocalTop = "local"
 
-	err := ctx.dbUpdateStage([]string{}, []string{}, "temp")
+	err := dbUpdateStage(ctx, []string{}, []string{})
 	if err != nil {
 		t.Logf(err.Error())
 	}
-}
-
-func TestCurTimeName(t *testing.T) {
-	res := timeName()
-	assert.Contains(t, res, "backup")
 }
 
 // Touches the actual disk
@@ -71,7 +59,7 @@ func TestGenerateHash(t *testing.T) {
 		t.Logf(err.Error())
 	}
 
-	res, err := ctx.generateHash("temp", "tempHello", 1)
+	res, err := generateHash("tempHello", 1)
 	assert.Equal(t, "f761c73b4cefb84b02e0b7f1576ca395", res)
 	ctx.os.Remove("temp")
 }
@@ -172,13 +160,13 @@ func TestSyncModifiedAcceptance(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/readme', 1, '2010-09-16 16:33:49')")
-	out, err := callCommand("echo 'FILE WAS MODIFIED' >> " + ctx.LocalTop + "/blast/demo/igblast/readme")
-	if err != nil {
-		t.Errorf("%s, %s", out, err.Error())
-	}
+	//out, err := ("echo 'FILE WAS MODIFIED' >> " + ctx.LocalTop + "/blast/demo/igblast/readme")
+	//if err != nil {
+	//	t.Errorf("%s, %s", out, err.Error())
+	//}
 
 	// Call our function to test
-	if err = ctx.callSyncFlow(); err != nil {
+	if err = callSyncFlow(&ctx); err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 
@@ -228,11 +216,11 @@ func TestSyncDeletedAcceptance(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	time.Sleep(time.Duration(5) * time.Second)
-	_, err = callCommand("touch " + ctx.LocalTop + "/blast/demo/igblast/testfile")
+	//_, err = callCommand("touch " + ctx.LocalTop + "/blast/demo/igblast/testfile")
 	ctx.Db.Exec("insert into entries(PathName, VersionNum, DateModified) values('/blast/demo/igblast/testfile', 1, '2010-09-16 16:33:49')")
 
 	// Call our function to test
-	if err = ctx.callSyncFlow(); err != nil {
+	if err = callSyncFlow(&ctx); err != nil {
 		t.Errorf("Unexpected: %s", err)
 	}
 

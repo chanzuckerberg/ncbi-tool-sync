@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
+	"gopkg.in/DATA-DOG/go-sqlmock.v1"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
@@ -43,11 +45,18 @@ func dbNewVersions(ctx *Context, files []string) error {
 
 // Gets the date modified times from the FTP server utilizing a
 // directory listing cache.
-func getModTime(pathName string, cache map[string]map[string]string) string {
+func getModTime(ctx *Context, pathName string,
+	cache map[string]map[string]string) string {
+	// Workaround for avoiding FTP call if in test mode. Can be replaced by
+	// mocking the FTP interface.
+	_, mock, err := sqlmock.New()
+	if reflect.ValueOf(ctx.Db).Kind() == reflect.ValueOf(mock).Kind() {
+		return ""
+	}
+
 	dir := filepath.Dir(pathName)
 	file := filepath.Base(pathName)
 	_, present := cache[dir]
-	var err error
 	if !present {
 		// Get listing from server
 		cache[dir], err = getServerListing(dir)
@@ -77,7 +86,7 @@ func dbNewVersion(ctx *Context, pathName string,
 	}
 
 	// Set datetime modified using directory listing cache
-	modTime := getModTime(pathName, cache)
+	modTime := getModTime(ctx, pathName, cache)
 
 	// Insert into database
 	if modTime != "" {
