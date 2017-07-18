@@ -41,6 +41,8 @@ func (ctx *Context) generateHash(origPath string, path string,
 	hash := md5.New()
 	_, err = io.WriteString(hash, key)
 	if err != nil {
+		err = newErr("Error in generating md5 hash.", err)
+		log.Print(err)
 		return result, err
 	}
 

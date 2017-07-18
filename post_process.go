@@ -17,10 +17,14 @@ func (ctx *Context) dbUpdateStage(newF []string, modified []string) error {
 	// Add new or modified files as db entries
 	err = ctx.dbNewVersions(newF)
 	if err != nil {
+		err = newErr("Error in adding new files to db.", err)
+		log.Print(err)
 		return err
 	}
 	err = ctx.dbNewVersions(modified)
 	if err != nil {
+		err = newErr("Error in adding new versions of modified files to db.", err)
+		log.Print(err)
 		return err
 	}
 	return err
@@ -50,6 +54,7 @@ func (ctx *Context) getModTime(pathName string,
 		// Get listing from server
 		cache[dir], err = ctx.getServerListing(dir)
 		if err != nil {
+			err = newErr("Error in getting listing from FTP server.", err)
 			log.Print(err)
 		}
 	}

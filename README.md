@@ -3,7 +3,7 @@
 * Components:
   * Sync service: https://github.com/chanzuckerberg/ncbi-tool-sync
   * Server service: https://github.com/chanzuckerberg/ncbi-tool-server
-  * Command line client
+  * Command line client: https://github.com/chanzuckerberg/ncbi-tool-cliclient
 
 * Planning docs:
   * Part 1: https://docs.google.com/document/d/1y9Y6Q5HgPHT5CfIPCMtkK2gIINtzcTEhdNzEWwqIIw4/edit
