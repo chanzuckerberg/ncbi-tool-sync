@@ -29,7 +29,7 @@ func callSyncFlow(ctx *Context) error {
 	// Offset scheduling of next run so it'll only schedule after one finishes
 	gocron.Clear()
 	defer func() {
-		gocron.Every(1).Hour().Do(callSyncFlow(ctx))
+		gocron.Every(1).Hour().Do(callSyncFlow, ctx)
 		log.Print("Next run has been scheduled...")
 		<-gocron.Start()
 	}()
@@ -172,7 +172,7 @@ func dryRunRsyncMD5(ctx *Context, source string) ([]string, []string, []string,
 	var newF, modified, deleted []string
 	template := "rsync -arzv -n --itemize-changes --delete --no-motd --include " +
 		"'*.md5' --exclude 'cloud/*' --include '*/' --exclude '.*' --exclude '*' " +
-		"--copy-links --prune-empty-dirs %s %s"
+		"--copy-links --prune-empty-dirs --checksum %s %s"
 	cmd := fmt.Sprintf(template, source, ctx.LocalPath)
 	stdout, _, err := commandVerboseOnErr(cmd)
 	if err != nil {
