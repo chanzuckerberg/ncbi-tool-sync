@@ -19,7 +19,6 @@ type Context struct {
 	LocalTop   string // Set as $HOME/remote
 	UserHome   string
 	TempNew    string // Set as $HOME/tempNew
-	TempOld    string // Set as $HOME/tempOld
 }
 
 // Entry point for the entire sync workflow with remote server.
