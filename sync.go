@@ -62,27 +62,71 @@ func fileOperationStage(ctx *Context, newF []string, modified []string,
 	deleted []string) {
 	log.Print("Beginning file operations stage.")
 
-	// Copy from NCBI remote to local temp folder
-	log.Print("Going to copy new and modified files from remote...")
-	copyFilesFromRemote(ctx, newF)
-	copyFilesFromRemote(ctx, modified)
+	log.Print("Going to handle new file operations...")
+	newFilesOperations(ctx, newF)
+	log.Print("Going to handle modified file operations...")
+	modifiedFilesOperations(ctx, modified)
+	log.Print("Going to handle deleted file operations...")
+	deletedFilesOperations(ctx, deleted)
+}
 
-	// Move files around on S3 to be replaced. Moves the to-be-replaced
-	// files to the archive folder on S3 and renames them.
-	log.Print("Going to move around modified and deleted files on " +
-		"remote...")
-	moveOldFiles(ctx, modified)
-	moveOldFiles(ctx, deleted)
+// newFilesOperations executes operations for a single file at a time for new
+// files.
+func newFilesOperations(ctx *Context, newF []string) {
+	var err error
+	for _, file := range newF {
+		if err = copyFileFromRemote(ctx, file); err != nil {
+			err = newErr("Error in copying new file from remote.", err)
+			log.Print(err)
+			continue
+		}
+		if err = putObject(ctx, ctx.TempNew+file, file); err != nil {
+			err = newErr("Error in uploading new file to S3.", err)
+			log.Print(err)
+		}
+	}
+}
 
-	// Delete files to-be-deleted on S3
-	log.Print("Going to delete files on remote...")
-	deleteObjects(ctx, modified)
-	deleteObjects(ctx, deleted)
+// deletedFilesOperations executes operations for a single file at a time for
+// deleted files.
+func deletedFilesOperations(ctx *Context, newF []string) {
+	var err error
+	for _, file := range newF {
+		if err = moveOldFile(ctx, file); err != nil {
+			err = newErr("Error in moving deleted file to archive.", err)
+			log.Print(err)
+		}
+		if err = deleteObject(ctx, file); err != nil {
+			err = newErr("Error in deleting file.", err)
+			log.Print(err)
+		}
+	}
+}
 
-	// Upload new files saved locally to S3
-	log.Print("Going to upload local temp files to remote...")
-	putObjects(ctx, newF)
-	putObjects(ctx, modified)
+// modifiedFilesOperations executes a single file at-a-time flow for modified
+// files. Saves on local disk space for new files temporarily before uploading
+// to S3.
+func modifiedFilesOperations(ctx *Context, modified []string) {
+	var err error
+	for _, file := range modified {
+		if err = copyFileFromRemote(ctx, file); err != nil {
+			err = newErr("Error in copying modified file from remote.", err)
+			log.Print(err)
+			continue
+		}
+		if err = moveOldFile(ctx, file); err != nil {
+			err = newErr("Error in moving modified file to archive.", err)
+			log.Print(err)
+		}
+		if err = deleteObject(ctx, file); err != nil {
+			err = newErr("Error in deleting old modified file copies.", err)
+			log.Print(err)
+		}
+		if err = putObject(ctx, ctx.TempNew+file, file); err != nil {
+			err = newErr("Error in uploading new version of file to S3.", err)
+			log.Print(err)
+		}
+	}
 }
 
 // Analysis stage of getting itemized output from rsync and parsing for new,
@@ -301,8 +345,13 @@ func copyFileFromRemote(ctx *Context, file string) error {
 	template := "rsync -arzv --size-only --no-motd --progress " +
 		"--copy-links %s %s"
 	cmd := fmt.Sprintf(template, source, dest)
-	commandStreaming(cmd)
-	return nil
+	_, _, err = commandVerbose(cmd)
+	if err != nil {
+		err = newErr("Couldn't rsync file to local disk.", err)
+		log.Print(err)
+		return err
+	}
+	return err
 }
 
 // Uploads list of files from local disk to S3 folder.
@@ -342,7 +391,10 @@ func putObject(ctx *Context, onDisk string, uploadKey string) error {
 	}
 
 	// Remove file locally after upload finished
-	os.Remove(onDisk)
+	if err = os.Remove(onDisk); err != nil {
+		err = newErr("Error in deleting temporary file on local disk.", err)
+		log.Print(err)
+	}
 	return err
 }
 

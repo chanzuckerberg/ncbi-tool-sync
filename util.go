@@ -106,9 +106,7 @@ func setupConfig(ctx *Context) {
 	ctx.LocalTop = ctx.UserHome + "/remote"
 	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.TempNew = ctx.UserHome + "/tempNew"
-	ctx.TempOld = ctx.UserHome + "/tempOld"
 	ctx.os.MkdirAll(ctx.TempNew, os.ModePerm)
-	ctx.os.MkdirAll(ctx.TempOld, os.ModePerm)
 
 	serv := os.Getenv("SERVER")
 	if serv != "" {
