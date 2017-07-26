@@ -11,15 +11,15 @@ import (
 	"time"
 )
 
-// MountFuse mounts the virtual directory. Uses goofys tool to mount
+// MountFuse mounts the virtual directory.
 // S3 as a local folder for syncing operations.
 func MountFuse(ctx *Context) error {
 	log.Print("Starting FUSE mount...")
 	_ = ctx.os.Mkdir(ctx.LocalTop, os.ModePerm)
-	goofys := os.Getenv("GOOFYS")
-	cmd := fmt.Sprintf("./goofys %s %s", ctx.Bucket, ctx.LocalTop)
-	if goofys != "" {
-		cmd = fmt.Sprintf("%s %s %s", goofys, ctx.Bucket,
+	cmd := fmt.Sprintf("/usr/local/bin/s3fs %s %s", ctx.Bucket, ctx.LocalTop)
+	fuseTool := os.Getenv("FUSETOOL")
+	if fuseTool != "" {
+		cmd = fmt.Sprintf("%s %s %s", fuseTool, ctx.Bucket,
 			ctx.LocalTop)
 	}
 	_, _, err := commandVerboseOnErr(cmd)

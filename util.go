@@ -103,6 +103,20 @@ func setupConfig(ctx *Context) {
 	if region := os.Getenv("AWS_REGION"); region == "" {
 		os.Setenv("AWS_REGION", "us-west-2")
 	}
+
+	// Set up credentials for s3fs
+	id := os.Getenv("AWS_ACCESS_KEY_ID")
+	pass := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if id != "" && pass != "" {
+		cmd := fmt.Sprintf("echo %s:%s > /etc/passwd-s3fs", id, pass)
+		if _, _, err := commandVerbose(cmd); err != nil {
+			log.Fatal(err)
+		}
+		cmd = fmt.Sprintf("chmod 600 /etc/passwd-s3fs")
+		if _, _, err := commandVerbose(cmd); err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func loadFromYaml(ctx *Context) {
