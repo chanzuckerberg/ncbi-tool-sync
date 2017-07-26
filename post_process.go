@@ -4,8 +4,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
-	"gopkg.in/DATA-DOG/go-sqlmock.v1"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
@@ -49,10 +47,11 @@ func getModTime(ctx *Context, pathName string,
 	cache map[string]map[string]string) string {
 	// Workaround for avoiding FTP call if in test mode. Can be replaced by
 	// mocking the FTP interface.
-	_, mock, err := sqlmock.New()
-	if reflect.ValueOf(ctx.Db).Kind() == reflect.ValueOf(mock).Kind() {
-		return ""
-	}
+	//_, mock, err := sqlmock.New()
+	//if reflect.ValueOf(ctx.Db).Kind() == reflect.ValueOf(mock).Kind() {
+	//	return ""
+	//}
+	var err error
 
 	dir := filepath.Dir(pathName)
 	file := filepath.Base(pathName)
