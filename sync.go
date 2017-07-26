@@ -17,12 +17,12 @@ import (
 // Then runs the real sync. Finally processes the changes.
 func callSyncFlow(ctx *Context) error {
 	log.Print("Start of sync flow...")
+	var err error
 
 	// Check db
-	err := ctx.Db.Ping()
-	if err != nil {
-		log.Print(err)
+	if err = ctx.Db.Ping(); err != nil {
 		err = newErr("Failed to ping database. Aborting run.", err)
+		log.Print(err)
 		return err
 	}
 
@@ -145,57 +145,49 @@ func dryRunStage(ctx *Context) ([]string, []string, []string, error) {
 	checkMountRepeat(ctx, quit)
 
 	// Dry runs
-	// Ex: ftp.ncbi.nih.gov/blast/db
-	source := fmt.Sprintf("%s%s/", ctx.Server, ctx.SourcePath)
-	newF, modified, deleted, err := dryRunRsync(ctx, source)
-	if err != nil {
-		err = newErr("Error in regular dry sync call.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
-	}
-	newMD5, modifiedMD5, deletedMD5, err := dryRunRsyncMD5(ctx, source)
-	if err != nil {
-		err = newErr("Error in MD5 dry sync call.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
+	var newF, modified, deleted []string
+	for _, folder := range ctx.syncFolders {
+		n, m, d, err := dryRunRsync(ctx, folder)
+		if err != nil {
+			err = newErr("Error in running dry run.", err)
+			log.Print(err)
+			return newF, modified, deleted, err
+		}
+		newF = append(newF, n...)
+		modified = append(modified, m...)
+		deleted = append(deleted, d...)
 	}
 
-	// Terminate FUSE-checking goroutine
-	quit <- true
+	quit <- true // Terminate FUSE-checking goroutine
 
 	// Merge list of regular files and MD5 files
 	log.Print("Done with dry run...\nParsing changes...")
-	newF = append(newF, newMD5...)
-	modified = append(modified, modifiedMD5...)
-	deleted = append(deleted, deletedMD5...)
-
 	log.Printf("New on remote: %s", newF)
 	log.Printf("Modified on remote: %s", modified)
 	log.Printf("Deleted on remote: %s", deleted)
-	return newF, modified, deleted, err
+	return newF, modified, deleted, nil
 }
 
 // dryRunRsync runs a dry sync of main files from the source to local disk and
 // parses the itemized changes.
-func dryRunRsync(ctx *Context, source string) ([]string, []string, []string,
+func dryRunRsync(ctx *Context, folder syncFolder) ([]string, []string, []string,
 	error) {
 	// Setup
-	log.Print("Running main file dry run...")
+	log.Print("Running dry run...")
 	var newF, modified, deleted []string
-	template := "rsync -arzv -n --itemize-changes --delete " +
-		"--size-only --no-motd --exclude '.*' --exclude 'cloud/*' " +
-		"--exclude 'nr.gz' --exclude 'nt.gz' --exclude " +
-		"'other_genomic.gz' " +
-		"--copy-links --prune-empty-dirs %s %s"
+	template := "rsync -arzvn --itemize-changes --delete --no-motd --copy-links --prune-empty-dirs"
+	for _, flag := range folder.flags {
+		template += " --" + flag
+	}
+	source := ctx.Server + folder.sourcePath + "/"
+	dest := ctx.LocalTop + folder.sourcePath
+	cmd := fmt.Sprintf("%s %s %s", template, source, dest)
 
-	// Dry run
-	err := ctx.os.MkdirAll(ctx.LocalPath, os.ModePerm)
-	if err != nil {
+	if err := ctx.os.MkdirAll(dest, os.ModePerm); err != nil {
 		err = newErr("Couldn't make local path.", err)
 		log.Print(err)
 		return newF, modified, deleted, err
 	}
-	cmd := fmt.Sprintf(template, source, ctx.LocalPath)
 	log.Print("Beginning dry run execution...")
 	stdout, _, err := commandVerboseOnErr(cmd)
 	if err != nil {
@@ -204,28 +196,7 @@ func dryRunRsync(ctx *Context, source string) ([]string, []string, []string,
 		return newF, modified, deleted, err
 	}
 
-	newF, modified, deleted = parseChanges(stdout, ctx.SourcePath)
-	return newF, modified, deleted, err
-}
-
-// md5call is a separate dry rsync call for MD5 files. Workaround for running
-// with size-only on the main files, since MD5 files will not change in size.
-func dryRunRsyncMD5(ctx *Context, source string) ([]string, []string, []string,
-	error) {
-	log.Print("Running md5 file dry run...")
-	var newF, modified, deleted []string
-	template := "rsync -arzv -n --itemize-changes --delete --no-motd --include " +
-		"'*.md5' --exclude 'cloud/*' --include '*/' --exclude '.*' --exclude '*' " +
-		"--copy-links --prune-empty-dirs --checksum %s %s"
-	cmd := fmt.Sprintf(template, source, ctx.LocalPath)
-	stdout, _, err := commandVerboseOnErr(cmd)
-	if err != nil {
-		err = newErr("Error in running MD5 syncing.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
-	}
-
-	newF, modified, deleted = parseChanges(stdout, ctx.SourcePath)
+	newF, modified, deleted = parseChanges(stdout, folder.sourcePath)
 	return newF, modified, deleted, err
 }
 
@@ -313,22 +284,6 @@ func moveOldFileDb(ctx *Context, key string, file string, num int) error {
 	return err
 }
 
-// Moves to-be-replaced files to archive folder on S3.
-func moveOldFiles(ctx *Context, files []string) error {
-	for _, file := range files {
-		moveOldFile(ctx, file)
-	}
-	return nil
-}
-
-// Copies list of files from remote server to local disk folder with rsync.
-func copyFilesFromRemote(ctx *Context, files []string) error {
-	for _, file := range files {
-		copyFileFromRemote(ctx, file)
-	}
-	return nil
-}
-
 // Copies one file from remote server to local disk folder with rsync.
 func copyFileFromRemote(ctx *Context, file string) error {
 	source := fmt.Sprintf("%s%s", ctx.Server, file)
@@ -352,14 +307,6 @@ func copyFileFromRemote(ctx *Context, file string) error {
 		return err
 	}
 	return err
-}
-
-// Uploads list of files from local disk to S3 folder.
-func putObjects(ctx *Context, files []string) error {
-	for _, file := range files {
-		putObject(ctx, ctx.TempNew+file, file)
-	}
-	return nil
 }
 
 // Uploads one file from local disk to S3 with uploadKey.
@@ -430,14 +377,6 @@ func fileSizeOnS3(ctx *Context, file string, svc *s3.S3) (int, error) {
 	}
 	result = int(*output.ContentLength)
 	return result, err
-}
-
-// Deletes a list of objects on S3.
-func deleteObjects(ctx *Context, files []string) error {
-	for _, file := range files {
-		deleteObject(ctx, file)
-	}
-	return nil
 }
 
 // Deletes an object on S3.

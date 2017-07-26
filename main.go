@@ -12,13 +12,17 @@ import (
 type Context struct {
 	Db         *sql.DB
 	os         afero.Fs
-	Server     string `yaml:"Server"`
-	SourcePath string `yaml:"SourcePath"`
-	Bucket     string `yaml:"Bucket"`
-	LocalPath  string // Ex: $HOME/remote/blast/db
+	Server     string `yaml:"server"`
+	Bucket     string `yaml:"bucket"`
+	syncFolders []syncFolder `yaml:"syncFolders"`
 	LocalTop   string // Set as $HOME/remote
 	UserHome   string
 	TempNew    string // Set as $HOME/tempNew
+}
+
+type syncFolder struct {
+	sourcePath string
+	flags      []string
 }
 
 // Entry point for the entire sync workflow with remote server.

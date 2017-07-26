@@ -108,8 +108,7 @@ func dbNewVersion(ctx *Context, pathName string,
 // Ingests all the files in the working directory as new files. Used
 // for rebuilding the database or setup after a manual sync. Assumes
 // that the db is already connected.
-func ingestCurrentFiles(ctx *Context) error {
-	dest := ctx.LocalPath
+func ingestCurrentFiles(ctx *Context, dest string) error {
 	_, err := ctx.os.Stat(dest)
 	if err != nil {
 		log.Print("No files found in: " + dest)
