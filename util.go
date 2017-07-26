@@ -10,14 +10,15 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/afero"
-	"gopkg.in/yaml.v2"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"os/user"
 	"strings"
+	"github.com/smallfish/simpleyaml"
+	"io/ioutil"
+	"menteslibres.net/gosexy/to"
 )
 
 // Gets the full path of the user's home directory
@@ -27,7 +28,10 @@ func getUserHome() string {
 		log.Print("Couldn't get user's home directory.")
 		log.Fatal(err)
 	}
+	//fmt.Println(usr)
+
 	return usr.HomeDir
+	//return "/home/ubuntu"
 }
 
 // Generates a hash for the file based on the name, version number,
@@ -86,35 +90,68 @@ func lastVersionNum(ctx *Context, file string, inclArchive bool) int {
 
 // Loads the configuration file and starts db connection.
 func setupConfig(ctx *Context) {
-	file, err := ioutil.ReadFile("config.yaml")
-	if err != nil {
-		log.Fatal(err)
-	}
+	loadFromYaml(ctx)
 
-	// Load from config file
-	err = yaml.Unmarshal(file, ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Interface for file system
-	ctx.os = afero.NewOsFs()
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	ctx.os = afero.NewOsFs() // Interface for file system
 	ctx.LocalTop = ctx.UserHome + "/remote"
-	ctx.LocalPath = ctx.LocalTop + ctx.SourcePath
 	ctx.TempNew = ctx.UserHome + "/tempNew"
 	ctx.os.MkdirAll(ctx.TempNew, os.ModePerm)
 
-	serv := os.Getenv("SERVER")
-	if serv != "" {
+	if serv := os.Getenv("SERVER"); serv != "" {
 		ctx.Server = serv
 	}
-	region := os.Getenv("AWS_REGION")
-	if region == "" {
+	if region := os.Getenv("AWS_REGION"); region == "" {
 		os.Setenv("AWS_REGION", "us-west-2")
+	}
+}
+
+func loadFromYaml(ctx *Context) {
+	// Load from config file
+	source, err := ioutil.ReadFile("config.yaml")
+	if err != nil {
+		log.Fatal("Error in opening config. ", err)
+	}
+	yml, err := simpleyaml.NewYaml(source)
+	if err != nil {
+		log.Fatal("Error in parsing config. ", err)
+	}
+
+	var str string
+	if str, err = yml.Get("server").String(); err != nil {
+		log.Print("No server set in config.yaml. Will try to set from env.")
+	} else {
+		ctx.Server = str
+	}
+	if str, err = yml.Get("bucket").String(); err != nil {
+		log.Fatal("Error in setting bucket. ", err)
+	}
+	ctx.Bucket = str
+
+	loadSyncFolders(ctx, yml)
+}
+
+func loadSyncFolders(ctx *Context, yml *simpleyaml.Yaml) {
+	// Load sync folder details
+	size, err := yml.Get("syncFolders").GetArraySize()
+	if err != nil {
+		log.Fatal("Error in loading syncFolders. ", err)
+	}
+	for i := 0; i < size; i++ {
+		folder := yml.Get("syncFolders").GetIndex(i)
+		name, err := folder.Get("name").String()
+		if err != nil {
+			log.Fatal("Error in loading folder name. ", err)
+		}
+		flagsYml, err := folder.Get("flags").Array()
+		if err != nil {
+			log.Fatal("Error in loading sync flags. ", err)
+		}
+		flags := []string{}
+		for _, v := range flagsYml {
+			flags = append(flags, to.String(v))
+		}
+		res := syncFolder{name, flags}
+		ctx.syncFolders = append(ctx.syncFolders, res)
 	}
 }
 
@@ -159,7 +196,7 @@ func commandVerbose(input string) (string, string, error) {
 		err = newErr("Error in running command.", err)
 		log.Print(err)
 	} else {
-		log.Print("Command ran with no errors.")
+		log.Print("Command ran successfully.")
 	}
 	return stdout, stderr, err
 }
@@ -178,7 +215,7 @@ func commandVerboseOnErr(input string) (string, string, error) {
 		err = newErr("Error in running command.", err)
 		log.Print(err)
 	} else {
-		log.Print("Command ran with no errors.")
+		log.Print("Command ran successfully.")
 	}
 	return stdout, stderr, err
 }

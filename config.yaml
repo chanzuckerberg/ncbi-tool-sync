@@ -1,3 +1,24 @@
-Server: rsync://ftp.ncbi.nih.gov
-SourcePath: /blast/db
-Bucket: czbiohub-ncbi-store
+server: rsync://ftp.ncbi.nih.gov
+bucket: czbiohub-ncbi-store
+
+syncFolders:
+  - name: /blast/db
+    flags:
+      - exclude '.*'
+      - exclude 'cloud/*'
+      - exclude 'nr.??.tar.gz'
+      - exclude 'nt.??.tar.gz'
+      - exclude 'other_genomic.gz'
+      - size-only
+  - name: /blast/db
+    flags:
+      - include '*.md5'
+      - exclude 'cloud/*'
+      - include '*/'
+      - exclude '.*'
+      - exclude '*'
+      - checksum
+  - name: /pub/taxonomy
+    flags:
+      - exclude '.*'
+      - size-only
