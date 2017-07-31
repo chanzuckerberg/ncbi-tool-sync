@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"database/sql"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
@@ -70,6 +71,23 @@ func getModTime(ctx *Context, pathName string,
 		}
 	}
 	return cache[dir][file]
+}
+
+// getDbModTime gets the modified time for the latest file version recorded in
+// the database.
+func getDbModTime(ctx *Context, file string) (string, error) {
+	var res string
+	err := ctx.Db.QueryRow("select DateModified from entries "+
+		"where PathName=? and DateModified is not null order by VersionNum desc",
+		file).Scan(&res)
+	switch {
+	case err == sql.ErrNoRows:
+		log.Print("No entries found for: " + file)
+		return "", nil
+	case err != nil:
+		return "", handle("Error in querying database.", err)
+	}
+	return res, err
 }
 
 // Handles one file with a new version on disk. Finds the proper
