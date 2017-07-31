@@ -11,6 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+	"sort"
+	"gopkg.in/fatih/set.v0"
 )
 
 // Calls the Rsync workflow. Executes a dry run first for processing.
@@ -41,6 +44,8 @@ func callSyncFlow(ctx *Context) error {
 		log.Print(err)
 		return err
 	}
+
+	return err
 
 	// File operation stage. Moving actual files around.
 	fileOperationStage(ctx, newF, modified, deleted)
@@ -141,7 +146,7 @@ func dryRunStage(ctx *Context) ([]string, []string, []string, error) {
 	//checkMount(ctx)
 
 	// Start go routine for checking FUSE connection continuously
-	quit := make(chan bool)
+	//quit := make(chan bool)
 	//checkMountRepeat(ctx, quit)
 
 	// Dry runs
@@ -158,7 +163,7 @@ func dryRunStage(ctx *Context) ([]string, []string, []string, error) {
 		deleted = append(deleted, d...)
 	}
 
-	quit <- true // Terminate FUSE-checking goroutine
+	//quit <- true // Terminate FUSE-checking goroutine
 
 	// Merge list of regular files and MD5 files
 	log.Print("Done with dry run...\nParsing changes...")
@@ -182,31 +187,7 @@ func dryRunRsync(ctx *Context, folder syncFolder) ([]string, []string, []string,
 	log.Print("Running dry run...")
 	var newF, modified, deleted []string
 
-	// Get listing from S3
-	pastListing := []fInfo{}
-	svc := s3.New(session.Must(session.NewSession()))
-	path := folder.sourcePath[1:] // Remove leading forward slash
-	input := &s3.ListObjectsInput{
-		Bucket:  aws.String(ctx.Bucket),
-		Prefix:  aws.String(path),
-	}
-	res, err := svc.ListObjects(input)
-	if err != nil {
-		err = newErr("Error in getting listing of existing files.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
-	}
-	cache := make(map[string]map[string]string)
-	for _, val := range res.Contents {
-		name := *val.Key
-		modTime := getModTime(ctx, name, cache)
-		size := *val.Size
-		res := fInfo{name, modTime, int(size)}
-		pastListing = append(pastListing, res)
-	}
-	// wait this is incorrect because you want the S3 listing to have the old modtimes
-
-	// Get listing from origin server
+	// Get listing from origin server. Get list of files to go through with respect to filters.
 	template := "rsync -arzvn --itemize-changes --delete --no-motd --copy-links --prune-empty-dirs"
 	for _, flag := range folder.flags {
 		template += " --" + flag
@@ -225,9 +206,154 @@ func dryRunRsync(ctx *Context, folder syncFolder) ([]string, []string, []string,
 		log.Print(err)
 		return newF, modified, deleted, err
 	}
+	toInspect := listFromRsync(stdout, folder.sourcePath)
+	folderSet := extractSubfolders(stdout, folder.sourcePath)
+	//log.Print("folderSet:")
+	//log.Println(folderSet)
+	//log.Print("To inspect:")
+	//log.Print(toInspect)
 
-	newF, modified, deleted = parseChanges(stdout, folder.sourcePath)
+	// Get listing from S3 and last modtimes. Represents the previous state of
+	// the directory.
+	pastState := make(map[string]fInfo)
+	svc := s3.New(session.Must(session.NewSession()))
+	path := folder.sourcePath[1:] // Remove leading forward slash
+	//fmt.Println("BUCKET: " + ctx.Bucket)
+	//fmt.Println("PATH: " + path)
+	input := &s3.ListObjectsInput{
+		Bucket:  aws.String(ctx.Bucket),
+		Prefix:  aws.String(path),
+		MaxKeys: aws.Int64(5000),
+	}
+
+	res := []*s3.Object{}
+	err = svc.ListObjectsPages(input,
+		func(page *s3.ListObjectsOutput, lastPage bool) bool {
+			res = append(res, page.Contents...)
+			//fmt.Println(page)
+			return true
+		})
+	//fmt.Println("S3 RESULTS:")
+	//fmt.Println(s3Results)
+
+	if err != nil {
+		err = newErr("Error in getting listing of existing files.", err)
+		log.Print(err)
+		return newF, modified, deleted, err
+	}
+	//fmt.Println(res)
+	for _, val := range res {
+		//log.Println(*val.Key)
+		name := "/" + *val.Key
+		size := int(*val.Size)
+		if !toInspect.Has(name) || size == 0 {
+			//fmt.Println("SKIP: " + name)
+			//fmt.Println(size)
+			continue
+		}
+		modTime, err := getDbModTime(ctx, name)
+		if err != nil {
+			log.Print(err)
+			modTime = ""
+		}
+		res := fInfo{name, modTime, size}
+		pastState[name] = res
+	}
+
+	log.Print("Past state:")
+	log.Print(pastState)
+
+	// Get current listing from FTP server. Represents the new state of the
+	// directory.
+	newState, err := getCurrentState(folderSet, toInspect)
+	log.Print("New state:")
+	log.Print(newState)
+	if err != nil {
+		return newF, modified, deleted, handle("Error in getting current listing and metadata.", err)
+	}
+
+	// Combine the two lists of file names for processing.
+	combined := make(map[string]bool)
+	for k := range pastState {
+		combined[k] = true
+	}
+	for k := range newState {
+		combined[k] = true
+	}
+	combinedNames := []string{}
+	for k := range combined {
+		combinedNames = append(combinedNames, k)
+	}
+	sort.Strings(combinedNames)
+	fmt.Printf("Combined names: %s\n", combinedNames)
+
+	// Actual comparison steps
+	for _, file := range combinedNames {
+		past, inPast := pastState[file]
+		cur, inCurrent := newState[file]
+		if !inPast && inCurrent {
+			newF = append(newF, file)
+		} else if inPast && !inCurrent {
+			deleted = append(deleted, file)
+		} else {
+			if past.size != cur.size {
+				log.Printf("%s: %d vs. %d", file, past.size, cur.size)
+				modified = append(modified, file)
+			} else {
+				if strings.Contains(file, ".md5") && past.modTime != cur.modTime {
+					log.Printf("%s: %s vs. %s", file, past.modTime, cur.modTime)
+					modified = append(modified, file)
+				}
+			}
+		}
+	}
+
+	fmt.Println("NEW:")
+	fmt.Println(newF)
+	fmt.Println("MODIFIED:")
+	fmt.Println(modified)
+	fmt.Println("DELETED:")
+	fmt.Println(deleted)
+	fmt.Println("DONE")
 	return newF, modified, deleted, err
+}
+
+func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo, error) {
+	res := make(map[string]fInfo)
+
+	// Open FTP connection
+	client, err := connectToServer()
+	if err != nil {
+		err = newErr("Error in connecting to FTP server.", err)
+		log.Print(err)
+		return res, err
+	}
+	defer client.Quit()
+	// Get FTP listing and metadata
+	for _, dir := range folderSet.List() {
+		fmt.Println("DIR: " + dir.(string))
+		response, err := client.List(dir.(string))
+		if err != nil {
+			err = newErr("Error in FTP listing.", err)
+			log.Print(err)
+			return res, err
+		}
+		// Process results
+		for _, entry := range response {
+			name := dir.(string) + "/" + entry.Name
+			if !toInspect.Has(name) || entry.Type != 0 {
+				continue
+			}
+			time := entry.Time.Format(time.RFC3339)
+			time = time[:len(time)-1]
+			res[name] = fInfo{
+				name,
+				time,
+				int(entry.Size),
+			}
+		}
+	}
+	return res, err
 }
 
 // Archives a file by moving it from the current storage to the archive
@@ -454,4 +580,30 @@ func parseChanges(out string, base string) ([]string,
 		}
 	}
 	return newF, modified, deleted
+}
+
+func listFromRsync(out string, base string) *set.Set {
+	res := set.New()
+	lines := strings.Split(out, "\n")
+	lines = lines[1 : len(lines)-4] // Remove junk lines
+	for _, line := range lines {
+		col := strings.SplitN(line, " ", 2)
+		file := col[1]
+		path := base + "/" + file
+		res.Add(path)
+	}
+	return res
+}
+
+func extractSubfolders(out string, base string) *set.Set {
+	res := set.New()
+	lines := strings.Split(out, "\n")
+	lines = lines[2 : len(lines)-4] // Remove junk lines
+	for _, line := range lines {
+		col := strings.SplitN(line, " ", 2)
+		file := col[1]
+		dir := filepath.Dir(base + "/" + file) // Grab the folder path
+		res.Add(dir)
+	}
+	return res
 }

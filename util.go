@@ -19,6 +19,7 @@ import (
 	"github.com/smallfish/simpleyaml"
 	"io/ioutil"
 	"menteslibres.net/gosexy/to"
+	"runtime"
 )
 
 // Gets the full path of the user's home directory
@@ -266,4 +267,16 @@ func commandStreaming(input string) {
 		log.Print(err)
 	}
 	log.Print("Command finished executing.")
+}
+
+func handle(input string, err error) error {
+	pc, fn, line, _ := runtime.Caller(1)
+	if input[len(input)-1:] != "." { // Add a period.
+		input += "."
+	}
+	input += " " + err.Error()
+	p := strings.Split(fn, "/")
+	fn = p[len(p)-1]
+	log.Printf("[error] in %s[%s:%d] %s", runtime.FuncForPC(pc).Name(), fn, line, input)
+	return errors.New(input)
 }
