@@ -9,16 +9,6 @@ syncFolders:
       - exclude 'nr.??.tar.gz'
       - exclude 'nt.??.tar.gz'
       - exclude 'other_genomic.gz'
-      - size-only
-  - name: /blast/db
-    flags:
-      - include '*.md5'
-      - exclude 'cloud/*'
-      - include '*/'
-      - exclude '.*'
-      - exclude '*'
-      - checksum
   - name: /pub/taxonomy
     flags:
       - exclude '.*'
-      - size-only

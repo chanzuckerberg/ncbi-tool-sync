@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/md5"
 	"database/sql"
@@ -9,17 +8,17 @@ import (
 	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/smallfish/simpleyaml"
 	"github.com/spf13/afero"
 	"io"
+	"io/ioutil"
 	"log"
+	"menteslibres.net/gosexy/to"
 	"os"
 	"os/exec"
 	"os/user"
-	"strings"
-	"github.com/smallfish/simpleyaml"
-	"io/ioutil"
-	"menteslibres.net/gosexy/to"
 	"runtime"
+	"strings"
 )
 
 // Gets the full path of the user's home directory
@@ -29,10 +28,7 @@ func getUserHome() string {
 		log.Print("Couldn't get user's home directory.")
 		log.Fatal(err)
 	}
-	//fmt.Println(usr)
-
 	return usr.HomeDir
-	//return "/home/ubuntu"
 }
 
 // Generates a hash for the file based on the name, version number,
@@ -44,9 +40,7 @@ func generateHash(path string, num int) (string, error) {
 	hash := md5.New()
 	_, err := io.WriteString(hash, key)
 	if err != nil {
-		err = newErr("Error in generating md5 hash.", err)
-		log.Print(err)
-		return result, err
+		return result, handle("Error in generating md5 hash.", err)
 	}
 
 	// Generate checksum
@@ -73,8 +67,7 @@ func lastVersionNum(ctx *Context, file string, inclArchive bool) int {
 			file)
 	}
 	if err != nil {
-		err = newErr("Error in getting VersionNum.", err)
-		log.Print(err)
+		handle("Error in getting VersionNum.", err)
 		return num
 	}
 	defer rows.Close()
@@ -82,8 +75,7 @@ func lastVersionNum(ctx *Context, file string, inclArchive bool) int {
 	if rows.Next() {
 		err = rows.Scan(&num)
 		if err != nil {
-			err = newErr("Error scanning row.", err)
-			log.Print(err)
+			handle("Error scanning row.", err)
 		}
 	}
 	return num
@@ -170,11 +162,6 @@ func loadSyncFolders(ctx *Context, yml *simpleyaml.Yaml) {
 	}
 }
 
-// Formats a custom string and error message into one error.
-func newErr(input string, err error) error {
-	return errors.New(input + " " + err.Error())
-}
-
 // Outputs AWS response if not empty.
 func awsOutput(input string) {
 	// Skip if empty response
@@ -208,8 +195,7 @@ func commandVerbose(input string) (string, string, error) {
 		log.Print(stderr)
 	}
 	if err != nil {
-		err = newErr("Error in running command.", err)
-		log.Print(err)
+		handle("Error in running command.", err)
 	} else {
 		log.Print("Command ran successfully.")
 	}
@@ -227,56 +213,29 @@ func commandVerboseOnErr(input string) (string, string, error) {
 		if stderr != "" {
 			log.Print(stderr)
 		}
-		err = newErr("Error in running command.", err)
-		log.Print(err)
+		handle("Error in running command.", err)
 	} else {
 		log.Print("Command ran successfully.")
 	}
 	return stdout, stderr, err
 }
 
-// Outputs a system command to a streaming log from stdout and stderr pipes.
-func commandStreaming(input string) {
-	log.Print("Command: " + input)
-	cmd := exec.Command("bash", "-c", input)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		err = newErr("Couldn't get from stdout.", err)
-		log.Print(err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		err = newErr("Couldn't get from stderr.", err)
-		log.Print(err)
-	}
-	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
-	go func() {
-		for scanner.Scan() {
-			log.Print(scanner.Text())
-		}
-	}()
-
-	err = cmd.Start()
-	if err != nil {
-		err = newErr("Error in starting command.", err)
-		log.Print(err)
-	}
-	err = cmd.Wait()
-	if err != nil {
-		err = newErr("Error in command execution.", err)
-		log.Print(err)
-	}
-	log.Print("Command finished executing.")
-}
-
 func handle(input string, err error) error {
-	pc, fn, line, _ := runtime.Caller(1)
+	if err == nil {
+		return err
+	}
+	pc, fn, line, ok := runtime.Caller(1)
 	if input[len(input)-1:] != "." { // Add a period.
 		input += "."
 	}
 	input += " " + err.Error()
+	if !ok {
+		log.Printf("[error] %s", input)
+		return errors.New(input)
+	}
 	p := strings.Split(fn, "/")
 	fn = p[len(p)-1]
-	log.Printf("[error] in %s[%s:%d] %s", runtime.FuncForPC(pc).Name(), fn, line, input)
+	log.Printf("[error] in %s[%s:%d] %s",
+		runtime.FuncForPC(pc).Name(), fn, line, input)
 	return errors.New(input)
 }

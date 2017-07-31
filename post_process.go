@@ -1,31 +1,26 @@
 package main
 
 import (
-	"log"
-	"os"
-	"path/filepath"
 	"database/sql"
+	"log"
+	"path/filepath"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
 // and deleted files are processed by archiveOldVersions in the temp
 // directory. New and modified files have new versions to be added to
 // the db. Temp folder is deleted after handling.
-func dbUpdateStage(ctx *Context, newF []string, modified []string) error {
+func dbUpdateStage(ctx *Context, toSync syncResult) error {
 	log.Print("Beginning db update stage.")
 
 	// Add new or modified files as db entries
-	err := dbNewVersions(ctx, newF)
+	err := dbNewVersions(ctx, toSync.newF)
 	if err != nil {
-		err = newErr("Error in adding new files to db.", err)
-		log.Print(err)
-		return err
+		return handle("Error in adding new files to db.", err)
 	}
-	err = dbNewVersions(ctx, modified)
+	err = dbNewVersions(ctx, toSync.modified)
 	if err != nil {
-		err = newErr("Error in adding new versions of modified files to db.", err)
-		log.Print(err)
-		return err
+		return handle("Error in adding new versions of modified files to db.", err)
 	}
 	return err
 }
@@ -60,8 +55,7 @@ func getModTime(ctx *Context, pathName string,
 		// Get listing from server
 		cache[dir], err = getServerListing(dir)
 		if err != nil {
-			err = newErr("Error in getting listing from FTP server.", err)
-			log.Print(err)
+			handle("Error in getting listing from FTP server.", err)
 		}
 	} else {
 		_, present = cache[dir][file]
@@ -120,55 +114,7 @@ func dbNewVersion(ctx *Context, pathName string,
 			"VersionNum) values(?, ?)", pathName, versionNum)
 	}
 	if err != nil {
-		err = newErr("Error in new version query.", err)
-		log.Print(err)
-		return err
+		return handle("Error in new version query.", err)
 	}
 	return err
-}
-
-// Ingests all the files in the working directory as new files. Used
-// for rebuilding the database or setup after a manual sync. Assumes
-// that the db is already connected.
-func ingestCurrentFiles(ctx *Context, dest string) error {
-	_, err := ctx.os.Stat(dest)
-	if err != nil {
-		log.Print("No files found in: " + dest)
-		return err
-	}
-
-	// Construct a list of all the file path names recursively
-	log.Print("Starting to ingest all existing files into db...")
-	fileList := []string{}
-	err = filepath.Walk(dest,
-		func(path string, f os.FileInfo, err error) error {
-			info, err := os.Stat(path)
-			if info.IsDir() {
-				return nil
-			}
-			if err != nil {
-				err = newErr("Error in walking file: "+path+".", err)
-				log.Print(err)
-				return err
-			}
-
-			snippet := path[len(ctx.LocalTop):]
-			fileList = append(fileList, snippet)
-			return nil
-		})
-	if err != nil {
-		err = newErr("Error in walking files.", err)
-		log.Print(err)
-		return err
-	}
-
-	fileList = fileList[1:] // Skip the folder itself
-	err = dbNewVersions(ctx, fileList)
-	if err != nil {
-		err = newErr("Error in handling new versions.", err)
-		log.Print(err)
-		return err
-	}
-	log.Print("Done ingesting existing files into db.")
-	return nil
 }

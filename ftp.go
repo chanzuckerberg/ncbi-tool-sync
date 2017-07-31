@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/jlaffaye/ftp"
-	"log"
 	"time"
 )
 
@@ -14,16 +13,12 @@ func getServerListing(dir string) (map[string]string,
 	FileToTime := make(map[string]string)
 	client, err := connectToServer()
 	if err != nil {
-		err = newErr("Error in connecting to FTP server.", err)
-		log.Print(err)
-		return FileToTime, err
+		return FileToTime, handle("Error in connecting to FTP server.", err)
 	}
 	defer client.Quit()
 	entries, err := client.List(dir)
 	if err != nil {
-		err = newErr("Error in FTP listing.", err)
-		log.Print(err)
-		return FileToTime, err
+		return FileToTime, handle("Error in FTP listing.", err)
 	}
 
 	for _, entry := range entries {
@@ -39,15 +34,11 @@ func connectToServer() (*ftp.ServerConn, error) {
 	addr := "ftp.ncbi.nih.gov:21"
 	client, err := ftp.Dial(addr)
 	if err != nil {
-		err = newErr("Error in dialing FTP server.", err)
-		log.Print(err)
-		return nil, err
+		return nil, handle("Error in dialing FTP server.", err)
 	}
 	err = client.Login("anonymous", "test@test.com")
 	if err != nil {
-		err = newErr("Error in logging in to FTP server.", err)
-		log.Print(err)
-		return nil, err
+		return nil, handle("Error in logging in to FTP server.", err)
 	}
 	return client, err
 }

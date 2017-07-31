@@ -10,14 +10,14 @@ import (
 
 // Context holds application state variables
 type Context struct {
-	Db         *sql.DB
-	os         afero.Fs
-	Server     string `yaml:"server"`
-	Bucket     string `yaml:"bucket"`
+	Db          *sql.DB
+	os          afero.Fs
+	Server      string       `yaml:"server"`
+	Bucket      string       `yaml:"bucket"`
 	syncFolders []syncFolder `yaml:"syncFolders"`
-	LocalTop   string // Set as $HOME/remote
-	UserHome   string
-	TempNew    string // Set as $HOME/tempNew
+	LocalTop    string       // Set as $HOME/remote
+	UserHome    string
+	TempNew     string // Set as $HOME/tempNew
 }
 
 type syncFolder struct {

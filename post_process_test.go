@@ -1,11 +1,11 @@
 package main
 
 import (
-	"testing"
 	"github.com/spf13/afero"
 	"gopkg.in/DATA-DOG/go-sqlmock.v1"
 	"log"
 	"os"
+	"testing"
 )
 
 func setup(t *testing.T) (sqlmock.Sqlmock, *Context) {
