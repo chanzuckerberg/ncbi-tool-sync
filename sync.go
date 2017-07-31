@@ -1,32 +1,33 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/jasonlvhit/gocron"
+	"github.com/jlaffaye/ftp"
+	"gopkg.in/fatih/set.v0"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
-	"sort"
-	"gopkg.in/fatih/set.v0"
 )
 
-// Calls the Rsync workflow. Executes a dry run first for processing.
-// Then runs the real sync. Finally processes the changes.
+// callSyncFlow calls the Rsync workflow. Executes a dry run first for
+// processing. Then runs the sync file operations. Finally updates the db with
+// changes.
 func callSyncFlow(ctx *Context) error {
 	log.Print("Start of sync flow...")
 	var err error
 
 	// Check db
 	if err = ctx.Db.Ping(); err != nil {
-		err = newErr("Failed to ping database. Aborting run.", err)
-		log.Print(err)
-		return err
+		return handle("Failed to ping database. Aborting run.", err)
 	}
 
 	// Offset scheduling of next run so it'll only schedule after one finishes
@@ -38,41 +39,34 @@ func callSyncFlow(ctx *Context) error {
 	}()
 
 	// Dry run analysis stage
-	newF, modified, deleted, err := dryRunStage(ctx)
+	toSync, err := dryRunStage(ctx)
 	if err != nil {
-		err = newErr("Error in dry run stage.", err)
-		log.Print(err)
-		return err
+		return handle("Error in dry run stage.", err)
 	}
-
-	return err
 
 	// File operation stage. Moving actual files around.
-	fileOperationStage(ctx, newF, modified, deleted)
+	fileOperationStage(ctx, toSync)
 
 	// Db operation stage. Process changes in the db entries.
-	err = dbUpdateStage(ctx, newF, modified)
-	if err != nil {
-		err = newErr("Error in processing db changes.", err)
-		log.Print(err)
-		return err
+	if err = dbUpdateStage(ctx, toSync); err != nil {
+		return handle("Error in processing db changes.", err)
 	}
+
 	log.Print("Finished processing changes.")
 	log.Print("End of sync flow...")
 	return err
 }
 
 // Executes the actual file operations on local disk and S3.
-func fileOperationStage(ctx *Context, newF []string, modified []string,
-	deleted []string) {
+func fileOperationStage(ctx *Context, res syncResult) {
 	log.Print("Beginning file operations stage.")
 
 	log.Print("Going to handle new file operations...")
-	newFilesOperations(ctx, newF)
+	newFilesOperations(ctx, res.newF)
 	log.Print("Going to handle modified file operations...")
-	modifiedFilesOperations(ctx, modified)
+	modifiedFilesOperations(ctx, res.modified)
 	log.Print("Going to handle deleted file operations...")
-	deletedFilesOperations(ctx, deleted)
+	deletedFilesOperations(ctx, res.deleted)
 }
 
 // newFilesOperations executes operations for a single file at a time for new
@@ -81,13 +75,11 @@ func newFilesOperations(ctx *Context, newF []string) {
 	var err error
 	for _, file := range newF {
 		if err = copyFileFromRemote(ctx, file); err != nil {
-			err = newErr("Error in copying new file from remote.", err)
-			log.Print(err)
+			handle("Error in copying new file from remote.", err)
 			continue
 		}
 		if err = putObject(ctx, ctx.TempNew+file, file); err != nil {
-			err = newErr("Error in uploading new file to S3.", err)
-			log.Print(err)
+			handle("Error in uploading new file to S3.", err)
 		}
 	}
 }
@@ -98,12 +90,10 @@ func deletedFilesOperations(ctx *Context, newF []string) {
 	var err error
 	for _, file := range newF {
 		if err = moveOldFile(ctx, file); err != nil {
-			err = newErr("Error in moving deleted file to archive.", err)
-			log.Print(err)
+			handle("Error in moving deleted file to archive.", err)
 		}
 		if err = deleteObject(ctx, file); err != nil {
-			err = newErr("Error in deleting file.", err)
-			log.Print(err)
+			handle("Error in deleting file.", err)
 		}
 	}
 }
@@ -115,62 +105,43 @@ func modifiedFilesOperations(ctx *Context, modified []string) {
 	var err error
 	for _, file := range modified {
 		if err = copyFileFromRemote(ctx, file); err != nil {
-			err = newErr("Error in copying modified file from remote.", err)
-			log.Print(err)
+			handle("Error in copying modified file from remote.", err)
 			continue
 		}
 		if err = moveOldFile(ctx, file); err != nil {
-			err = newErr("Error in moving modified file to archive.", err)
-			log.Print(err)
+			handle("Error in moving modified file to archive.", err)
 		}
 		if err = deleteObject(ctx, file); err != nil {
-			err = newErr("Error in deleting old modified file copies.", err)
-			log.Print(err)
+			handle("Error in deleting old modified file copies.", err)
 		}
 		if err = putObject(ctx, ctx.TempNew+file, file); err != nil {
-			err = newErr("Error in uploading new version of file to S3.", err)
-			log.Print(err)
+			handle("Error in uploading new version of file to S3.", err)
 		}
 	}
 }
 
 // Analysis stage of getting itemized output from rsync and parsing for new,
 // modified, and deleted files.
-func dryRunStage(ctx *Context) ([]string, []string, []string, error) {
+func dryRunStage(ctx *Context) (syncResult, error) {
 	log.Print("Beginning dry run stage.")
-
-	// FUSE mounting steps
-	//UnmountFuse(ctx)
-	//MountFuse(ctx)
-	//defer UnmountFuse(ctx)
-	//checkMount(ctx)
-
-	// Start go routine for checking FUSE connection continuously
-	//quit := make(chan bool)
-	//checkMountRepeat(ctx, quit)
+	r := syncResult{}
 
 	// Dry runs
-	var newF, modified, deleted []string
 	for _, folder := range ctx.syncFolders {
-		n, m, d, err := dryRunRsync(ctx, folder)
+		resp, err := getChanges(ctx, folder)
 		if err != nil {
-			err = newErr("Error in running dry run.", err)
-			log.Print(err)
-			return newF, modified, deleted, err
+			return r, handle("Error in running dry run.", err)
 		}
-		newF = append(newF, n...)
-		modified = append(modified, m...)
-		deleted = append(deleted, d...)
+		r.newF = append(r.newF, resp.newF...)
+		r.modified = append(r.modified, resp.modified...)
+		r.deleted = append(r.deleted, resp.deleted...)
 	}
 
-	//quit <- true // Terminate FUSE-checking goroutine
-
-	// Merge list of regular files and MD5 files
 	log.Print("Done with dry run...\nParsing changes...")
-	log.Printf("New on remote: %s", newF)
-	log.Printf("Modified on remote: %s", modified)
-	log.Printf("Deleted on remote: %s", deleted)
-	return newF, modified, deleted, nil
+	log.Printf("New on remote: %s", r.newF)
+	log.Printf("Modified on remote: %s", r.modified)
+	log.Printf("Deleted on remote: %s", r.deleted)
+	return r, nil
 }
 
 type fInfo struct {
@@ -179,178 +150,126 @@ type fInfo struct {
 	size    int
 }
 
-// dryRunRsync runs a dry sync of main files from the source to local disk and
+type syncResult struct {
+	newF     []string
+	modified []string
+	deleted  []string
+}
+
+// Runs a dry sync of main files from the source to local disk and
 // parses the itemized changes.
-func dryRunRsync(ctx *Context, folder syncFolder) ([]string, []string, []string,
+func getChanges(ctx *Context, folder syncFolder) (syncResult,
 	error) {
 	// Setup
 	log.Print("Running dry run...")
-	var newF, modified, deleted []string
+	res := syncResult{}
+	pastState, err := getPreviousState(ctx, folder)
+	if err != nil {
+		return res, handle("Error in getting previous directory state", err)
+	}
+	toInspect, folderSet, err := getFilteredSet(ctx, folder)
+	if err != nil {
+		return res, handle("Error in getting filtered list of files", err)
+	}
+	newState, err := getCurrentState(folderSet, toInspect)
+	if err != nil {
+		return res, handle("Error in getting current directory state.", err)
+	}
+	combinedNames := combineNames(pastState, newState)
+	res = fileChangeLogic(pastState, newState, combinedNames)
+	return res, err
+}
 
-	// Get listing from origin server. Get list of files to go through with respect to filters.
-	template := "rsync -arzvn --itemize-changes --delete --no-motd --copy-links --prune-empty-dirs"
+// Call rsync dry run to get a list of files to inspect with respect to the
+// rsync filters.
+func getFilteredSet(ctx *Context, folder syncFolder) (*set.Set, *set.Set,
+	error) {
+	toInspect := set.New()
+	folderSet := set.New()
+	template := "rsync -arzvn --itemize-changes --delete --no-motd " +
+		"--copy-links --prune-empty-dirs"
 	for _, flag := range folder.flags {
 		template += " --" + flag
 	}
 	source := ctx.Server + folder.sourcePath + "/"
-	tmp := ctx.LocalTop + "tmp"
+	tmp := ctx.LocalTop + "/tmp"
 	cmd := fmt.Sprintf("%s %s %s", template, source, tmp)
 	if err := ctx.os.MkdirAll(tmp, os.ModePerm); err != nil {
-		err = newErr("Couldn't make local tmp path.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
+		return toInspect, folderSet, handle("Couldn't make local tmp path.", err)
 	}
 	stdout, _, err := commandVerboseOnErr(cmd)
 	if err != nil {
-		err = newErr("Error in dry run execution.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
+		return toInspect, folderSet, handle("Error in dry run execution.", err)
 	}
-	toInspect := listFromRsync(stdout, folder.sourcePath)
-	folderSet := extractSubfolders(stdout, folder.sourcePath)
-	//log.Print("folderSet:")
-	//log.Println(folderSet)
-	//log.Print("To inspect:")
-	//log.Print(toInspect)
+	toInspect = listFromRsync(stdout, folder.sourcePath)
+	folderSet = extractSubfolders(stdout, folder.sourcePath)
+	return toInspect, folderSet, err
+}
 
+func getPreviousState(ctx *Context, folder syncFolder) (map[string]fInfo,
+	error) {
 	// Get listing from S3 and last modtimes. Represents the previous state of
 	// the directory.
 	pastState := make(map[string]fInfo)
 	svc := s3.New(session.Must(session.NewSession()))
 	path := folder.sourcePath[1:] // Remove leading forward slash
-	//fmt.Println("BUCKET: " + ctx.Bucket)
-	//fmt.Println("PATH: " + path)
 	input := &s3.ListObjectsInput{
-		Bucket:  aws.String(ctx.Bucket),
-		Prefix:  aws.String(path),
-		MaxKeys: aws.Int64(5000),
+		Bucket: aws.String(ctx.Bucket),
+		Prefix: aws.String(path),
 	}
-
-	res := []*s3.Object{}
-	err = svc.ListObjectsPages(input,
+	response := []*s3.Object{}
+	err := svc.ListObjectsPages(input,
 		func(page *s3.ListObjectsOutput, lastPage bool) bool {
-			res = append(res, page.Contents...)
-			//fmt.Println(page)
+			response = append(response, page.Contents...)
 			return true
 		})
-	//fmt.Println("S3 RESULTS:")
-	//fmt.Println(s3Results)
-
 	if err != nil {
-		err = newErr("Error in getting listing of existing files.", err)
-		log.Print(err)
-		return newF, modified, deleted, err
+		return pastState, handle("Error in getting listing of existing files.", err)
 	}
-	//fmt.Println(res)
-	for _, val := range res {
-		//log.Println(*val.Key)
+
+	var modTime string
+	for _, val := range response {
 		name := "/" + *val.Key
 		size := int(*val.Size)
-		if !toInspect.Has(name) || size == 0 {
-			//fmt.Println("SKIP: " + name)
-			//fmt.Println(size)
+		if size == 0 {
 			continue
 		}
-		modTime, err := getDbModTime(ctx, name)
+		modTime, err = getDbModTime(ctx, name)
 		if err != nil {
-			log.Print(err)
+			handle("Error in getting db modTime", err)
 			modTime = ""
 		}
-		res := fInfo{name, modTime, size}
-		pastState[name] = res
+		pastState[name] = fInfo{name, modTime, size}
 	}
-
-	log.Print("Past state:")
-	log.Print(pastState)
-
-	// Get current listing from FTP server. Represents the new state of the
-	// directory.
-	newState, err := getCurrentState(folderSet, toInspect)
-	log.Print("New state:")
-	log.Print(newState)
-	if err != nil {
-		return newF, modified, deleted, handle("Error in getting current listing and metadata.", err)
-	}
-
-	// Combine the two lists of file names for processing.
-	combined := make(map[string]bool)
-	for k := range pastState {
-		combined[k] = true
-	}
-	for k := range newState {
-		combined[k] = true
-	}
-	combinedNames := []string{}
-	for k := range combined {
-		combinedNames = append(combinedNames, k)
-	}
-	sort.Strings(combinedNames)
-	fmt.Printf("Combined names: %s\n", combinedNames)
-
-	// Actual comparison steps
-	for _, file := range combinedNames {
-		past, inPast := pastState[file]
-		cur, inCurrent := newState[file]
-		if !inPast && inCurrent {
-			newF = append(newF, file)
-		} else if inPast && !inCurrent {
-			deleted = append(deleted, file)
-		} else {
-			if past.size != cur.size {
-				log.Printf("%s: %d vs. %d", file, past.size, cur.size)
-				modified = append(modified, file)
-			} else {
-				if strings.Contains(file, ".md5") && past.modTime != cur.modTime {
-					log.Printf("%s: %s vs. %s", file, past.modTime, cur.modTime)
-					modified = append(modified, file)
-				}
-			}
-		}
-	}
-
-	fmt.Println("NEW:")
-	fmt.Println(newF)
-	fmt.Println("MODIFIED:")
-	fmt.Println(modified)
-	fmt.Println("DELETED:")
-	fmt.Println(deleted)
-	fmt.Println("DONE")
-	return newF, modified, deleted, err
+	return pastState, err
 }
 
-func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo, error) {
+func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
+	error) {
 	res := make(map[string]fInfo)
 
 	// Open FTP connection
 	client, err := connectToServer()
 	if err != nil {
-		err = newErr("Error in connecting to FTP server.", err)
-		log.Print(err)
-		return res, err
+		return res, handle("Error in connecting to FTP server.", err)
 	}
 	defer client.Quit()
 	// Get FTP listing and metadata
+	var resp []*ftp.Entry
 	for _, dir := range folderSet.List() {
-		fmt.Println("DIR: " + dir.(string))
-		response, err := client.List(dir.(string))
+		resp, err = client.List(dir.(string))
 		if err != nil {
-			err = newErr("Error in FTP listing.", err)
-			log.Print(err)
-			return res, err
+			return res, handle("Error in FTP listing.", err)
 		}
 		// Process results
-		for _, entry := range response {
+		for _, entry := range resp {
 			name := dir.(string) + "/" + entry.Name
 			if !toInspect.Has(name) || entry.Type != 0 {
 				continue
 			}
 			time := entry.Time.Format(time.RFC3339)
 			time = time[:len(time)-1]
-			res[name] = fInfo{
-				name,
-				time,
-				int(entry.Size),
-			}
+			res[name] = fInfo{name, time, int(entry.Size)}
 		}
 	}
 	return res, err
@@ -364,24 +283,19 @@ func moveOldFile(ctx *Context, file string) error {
 	log.Print("Archiving old version of: " + file)
 	num := lastVersionNum(ctx, file, false)
 	if num < 1 {
-		log.Print("No previous unarchived version found in db.")
-		return err
+		return errors.New("no previous unarchived version found in db")
 	}
 	key, err := generateHash(file, num)
 	if err != nil {
-		err = newErr("Error in generating checksum.", err)
-		log.Print(err)
-		return err
+		return handle("Error in generating checksum.", err)
 	}
 	err = moveOldFileOperations(ctx, file, key)
 	if err != nil {
-		err = newErr("Error in operation to move old file to archive.", err)
-		log.Print(err)
+		handle("Error in operation to move old file to archive.", err)
 	}
 	err = moveOldFileDb(ctx, key, file, num)
 	if err != nil {
-		err = newErr("Error in updating db entry for old file.", err)
-		log.Print(err)
+		handle("Error in updating db entry for old file.", err)
 	}
 	return err
 }
@@ -398,17 +312,14 @@ func moveOldFileOperations(ctx *Context, file string, key string) error {
 	// Get file size
 	size, err := fileSizeOnS3(ctx, file, svc)
 	if err != nil {
-		err = newErr("Error in getting file size on S3.", err)
-		log.Print(err)
-		return err
+		return handle("Error in getting file size on S3.", err)
 	}
 
 	if size < 4500000000 {
 		// Handle via S3 SDK
 		err = copyOnS3(ctx, file, key, svc)
 		if err != nil {
-			err = newErr("Error in copying file on S3.", err)
-			log.Print(err)
+			handle("Error in copying file on S3.", err)
 		}
 	} else {
 		log.Print("Large file handling...")
@@ -417,8 +328,7 @@ func moveOldFileOperations(ctx *Context, file string, key string) error {
 		cmd := fmt.Sprintf(template, ctx.Bucket, file, ctx.Bucket, key)
 		_, _, err = commandVerbose(cmd)
 		if err != nil {
-			err = newErr("Error in moving file on S3 via CLI.", err)
-			log.Println(err)
+			handle("Error in moving file on S3 via CLI.", err)
 		}
 	}
 	return err
@@ -434,8 +344,7 @@ func moveOldFileDb(ctx *Context, key string, file string, num int) error {
 	_, err := ctx.Db.Exec("update entries set ArchiveKey=? where "+
 		"PathName=? and VersionNum=?;", key, file, num)
 	if err != nil {
-		err = newErr("Error in updating db entry.", err)
-		log.Print(err)
+		return handle("Error in updating db entry.", err)
 	}
 	return err
 }
@@ -447,9 +356,7 @@ func copyFileFromRemote(ctx *Context, file string) error {
 	log.Print("Local dir to make: " + ctx.TempNew + filepath.Dir(file))
 	err := ctx.os.MkdirAll(ctx.TempNew+filepath.Dir(file), os.ModePerm)
 	if err != nil {
-		err = newErr("Couldn't make dir.", err)
-		log.Print(err)
-		return err
+		return handle("Couldn't make dir.", err)
 	}
 	// Ex: $HOME/tempNew/blast/db/README
 	dest := fmt.Sprintf("%s%s", ctx.TempNew, file)
@@ -458,9 +365,7 @@ func copyFileFromRemote(ctx *Context, file string) error {
 	cmd := fmt.Sprintf(template, source, dest)
 	_, _, err = commandVerbose(cmd)
 	if err != nil {
-		err = newErr("Couldn't rsync file to local disk.", err)
-		log.Print(err)
-		return err
+		return handle("Couldn't rsync file to local disk.", err)
 	}
 	return err
 }
@@ -473,9 +378,7 @@ func putObject(ctx *Context, onDisk string, uploadKey string) error {
 	log.Print("File upload. Source: " + onDisk)
 	local, err := os.Open(onDisk)
 	if err != nil {
-		err = newErr("Error in opening file on disk.", err)
-		log.Print(err)
-		return err
+		return handle("Error in opening file on disk.", err)
 	}
 	defer local.Close()
 
@@ -488,15 +391,12 @@ func putObject(ctx *Context, onDisk string, uploadKey string) error {
 	})
 	awsOutput(fmt.Sprintf("%#v", output))
 	if err != nil {
-		err = newErr(fmt.Sprintf("Error in file upload of %s to S3.", onDisk), err)
-		log.Print(err)
-		return err
+		return handle(fmt.Sprintf("Error in file upload of %s to S3.", onDisk), err)
 	}
 
 	// Remove file locally after upload finished
 	if err = os.Remove(onDisk); err != nil {
-		err = newErr("Error in deleting temporary file on local disk.", err)
-		log.Print(err)
+		return handle("Error in deleting temporary file on local disk.", err)
 	}
 	return err
 }
@@ -511,8 +411,7 @@ func copyOnS3(ctx *Context, file string, key string, svc *s3.S3) error {
 	output, err := svc.CopyObject(params)
 	awsOutput(output.GoString())
 	if err != nil {
-		err = newErr(fmt.Sprintf("Error in copying %s on S3.", file), err)
-		log.Print(err)
+		return handle(fmt.Sprintf("Error in copying %s on S3.", file), err)
 	}
 	return err
 }
@@ -527,9 +426,7 @@ func fileSizeOnS3(ctx *Context, file string, svc *s3.S3) (int, error) {
 	output, err := svc.HeadObject(input)
 	awsOutput(output.GoString())
 	if err != nil {
-		err = newErr("Error in HeadObject request.", err)
-		log.Print(err)
-		return result, err
+		return result, handle("Error in HeadObject request.", err)
 	}
 	result = int(*output.ContentLength)
 	return result, err
@@ -547,39 +444,9 @@ func deleteObject(ctx *Context, file string) error {
 	output, err := svc.DeleteObject(input)
 	awsOutput(output.GoString())
 	if err != nil {
-		err = newErr("Error in deleting object.", err)
-		log.Print(err)
+		return handle("Error in deleting object.", err)
 	}
 	return err
-}
-
-// Parses the Rsync itemized output for new, modified, and deleted
-// files. Follows the Rsync itemized changes syntax that specify
-// exactly which changes occurred or will occur.
-func parseChanges(out string, base string) ([]string,
-	[]string, []string) {
-	changes := strings.Split(out, "\n")
-	changes = changes[1 : len(changes)-4] // Remove junk lines
-
-	var newF, modified, deleted []string
-
-	for _, line := range changes {
-		col := strings.SplitN(line, " ", 2)
-		change := col[0]
-		file := col[1]
-		path := base + "/" + file
-		last := file[len(file)-1:]
-		if strings.HasPrefix(change, ">f+++++++") {
-			newF = append(newF, path)
-		} else if strings.HasPrefix(change, ">f") {
-			modified = append(modified, path)
-		} else if strings.HasPrefix(change, "*deleting") &&
-			last != "/" {
-			// Exclude folders
-			deleted = append(deleted, path)
-		}
-	}
-	return newF, modified, deleted
 }
 
 func listFromRsync(out string, base string) *set.Set {
@@ -606,4 +473,45 @@ func extractSubfolders(out string, base string) *set.Set {
 		res.Add(dir)
 	}
 	return res
+}
+
+func combineNames(pastState map[string]fInfo,
+	newState map[string]fInfo) []string {
+	combined := set.New()
+	for k := range pastState {
+		combined.Add(k)
+	}
+	for k := range newState {
+		combined.Add(k)
+	}
+	res := []string{}
+	for _, v := range combined.List() {
+		res = append(res, v.(string))
+	}
+	sort.Strings(res)
+	return res
+}
+
+func fileChangeLogic(pastState map[string]fInfo, newState map[string]fInfo,
+	names []string) syncResult {
+	var n, m, d []string // New, modified, deleted
+	for _, f := range names {
+		past, inPast := pastState[f]
+		cur, inCurrent := newState[f]
+		if !inPast && inCurrent {
+			n = append(n, f)
+		} else if inPast && !inCurrent {
+			d = append(d, f)
+		} else {
+			if past.size != cur.size {
+				m = append(m, f)
+			} else {
+				if strings.Contains(f, ".md5") &&
+					past.modTime != cur.modTime {
+					m = append(m, f)
+				}
+			}
+		}
+	}
+	return syncResult{n, m, d}
 }
