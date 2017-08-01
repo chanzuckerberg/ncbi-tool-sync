@@ -32,8 +32,7 @@ func setupDatabase(ctx *Context) {
 		log.Print(err)
 		log.Fatal("Failed to set up database opener.")
 	}
-	err = ctx.Db.Ping()
-	if err != nil {
+	if err = ctx.Db.Ping(); err != nil {
 		log.Print(err)
 		log.Fatal("Failed to ping database.")
 	}

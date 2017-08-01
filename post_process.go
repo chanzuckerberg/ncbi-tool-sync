@@ -12,14 +12,13 @@ import (
 // the db. Temp folder is deleted after handling.
 func dbUpdateStage(ctx *Context, toSync syncResult) error {
 	log.Print("Beginning db update stage.")
+	var err error
 
 	// Add new or modified files as db entries
-	err := dbNewVersions(ctx, toSync.newF)
-	if err != nil {
+	if err = dbNewVersions(ctx, toSync.newF); err != nil {
 		return handle("Error in adding new files to db.", err)
 	}
-	err = dbNewVersions(ctx, toSync.modified)
-	if err != nil {
+	if err = dbNewVersions(ctx, toSync.modified); err != nil {
 		return handle("Error in adding new versions of modified files to db.", err)
 	}
 	return err
