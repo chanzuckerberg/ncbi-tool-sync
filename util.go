@@ -8,28 +8,12 @@ import (
 	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/smallfish/simpleyaml"
-	"github.com/spf13/afero"
 	"io"
-	"io/ioutil"
 	"log"
-	"menteslibres.net/gosexy/to"
-	"os"
 	"os/exec"
-	"os/user"
 	"runtime"
 	"strings"
 )
-
-// Gets the full path of the user's home directory
-func getUserHome() string {
-	usr, err := user.Current()
-	if err != nil {
-		log.Print("Couldn't get user's home directory.")
-		log.Fatal(err)
-	}
-	return usr.HomeDir
-}
 
 // Generates a hash for the file based on the name, version number,
 // and actual file contents.
@@ -81,73 +65,6 @@ func lastVersionNum(ctx *Context, file string, inclArchive bool) int {
 	return num
 }
 
-// Loads the configuration file and starts db connection.
-func setupConfig(ctx *Context) {
-	loadFromYaml(ctx)
-
-	ctx.os = afero.NewOsFs() // Interface for file system
-	ctx.LocalTop = ctx.UserHome + "/remote"
-	ctx.TempNew = ctx.UserHome + "/tempNew"
-	ctx.os.MkdirAll(ctx.TempNew, os.ModePerm)
-
-	if serv := os.Getenv("SERVER"); serv != "" {
-		ctx.Server = serv
-	}
-	if region := os.Getenv("AWS_REGION"); region == "" {
-		os.Setenv("AWS_REGION", "us-west-2")
-	}
-}
-
-func loadFromYaml(ctx *Context) {
-	// Load from config file
-	source, err := ioutil.ReadFile("config.yaml")
-	if err != nil {
-		log.Fatal("Error in opening config. ", err)
-	}
-	yml, err := simpleyaml.NewYaml(source)
-	if err != nil {
-		log.Fatal("Error in parsing config. ", err)
-	}
-
-	var str string
-	if str, err = yml.Get("server").String(); err != nil {
-		log.Print("No server set in config.yaml. Will try to set from env.")
-	} else {
-		ctx.Server = str
-	}
-	if str, err = yml.Get("bucket").String(); err != nil {
-		log.Fatal("Error in setting bucket. ", err)
-	}
-	ctx.Bucket = str
-
-	loadSyncFolders(ctx, yml)
-}
-
-func loadSyncFolders(ctx *Context, yml *simpleyaml.Yaml) {
-	// Load sync folder details
-	size, err := yml.Get("syncFolders").GetArraySize()
-	if err != nil {
-		log.Fatal("Error in loading syncFolders. ", err)
-	}
-	for i := 0; i < size; i++ {
-		folder := yml.Get("syncFolders").GetIndex(i)
-		name, err := folder.Get("name").String()
-		if err != nil {
-			log.Fatal("Error in loading folder name. ", err)
-		}
-		flagsYml, err := folder.Get("flags").Array()
-		if err != nil {
-			log.Fatal("Error in loading sync flags. ", err)
-		}
-		flags := []string{}
-		for _, v := range flagsYml {
-			flags = append(flags, to.String(v))
-		}
-		res := syncFolder{name, flags}
-		ctx.syncFolders = append(ctx.syncFolders, res)
-	}
-}
-
 // Outputs AWS response if not empty.
 func awsOutput(input string) {
 	// Skip if empty response
@@ -159,7 +76,8 @@ func awsOutput(input string) {
 }
 
 // Executes a shell command and returns the stdout, stderr, and err
-func commandWithOutput(input string) (string, string, error) {
+var commandWithOutput = commandWithOutputFunc
+func commandWithOutputFunc(input string) (string, string, error) {
 	cmd := exec.Command("sh", "-cx", input)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

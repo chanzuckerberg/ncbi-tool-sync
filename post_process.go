@@ -59,7 +59,7 @@ func getModTime(ctx *Context, pathName string,
 	} else {
 		_, present = cache[dir][file]
 		if !present {
-			log.Print("Error in getting listing. Expected to find file in cache.")
+			log.Print("Error in getting FTP listing. Expected to find file in cached listing.")
 			return ""
 		}
 	}

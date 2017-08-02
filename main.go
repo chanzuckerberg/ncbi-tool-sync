@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 // Context holds application state variables
@@ -15,9 +16,9 @@ type Context struct {
 	Server      string       `yaml:"server"`
 	Bucket      string       `yaml:"bucket"`
 	syncFolders []syncFolder `yaml:"syncFolders"`
-	LocalTop    string       // Set as $HOME/remote
 	UserHome    string
-	TempNew     string // Set as $HOME/tempNew
+	Temp        string // Set as $HOME/temp
+	svcS3       *s3.S3
 }
 
 type syncFolder struct {
@@ -46,9 +47,10 @@ func main() {
 
 	// General config
 	ctx := Context{}
-	ctx.UserHome = getUserHome()
 	setupConfig(&ctx)
-	setupDatabase(&ctx)
+	if _, err = setupDatabase(&ctx); err != nil {
+		log.Fatal("Error in db setup:", err)
+	}
 	defer func() {
 		err = ctx.Db.Close()
 		if err != nil {
