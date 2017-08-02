@@ -9,35 +9,28 @@ import (
 )
 
 // setupDatabase sets up the db and checks connection conditions
-func setupDatabase(ctx *Context) {
+func setupDatabase(ctx *Context) (string, error) {
 	var err error
-	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
-	if isDevelopment {
-		ctx.Db, err = sql.Open("mysql",
-			"dev:password@tcp(127.0.0.1:3306)/testdb")
-	} else {
-		// Setup RDS db from env variables
-		rdsHostname := os.Getenv("RDS_HOSTNAME")
-		rdsPort := os.Getenv("RDS_PORT")
-		rdsDbName := os.Getenv("RDS_DB_NAME")
-		rdsUsername := os.Getenv("RDS_USERNAME")
-		rdsPassword := os.Getenv("RDS_PASSWORD")
-		sourceName := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
-			rdsUsername, rdsPassword, rdsHostname, rdsPort, rdsDbName)
-		log.Print("DB connection string: " + sourceName)
-		ctx.Db, err = sql.Open("mysql", sourceName)
-	}
+	// Setup RDS db from env variables
+	rdsHostname := os.Getenv("RDS_HOSTNAME")
+	rdsPort := os.Getenv("RDS_PORT")
+	rdsDbName := os.Getenv("RDS_DB_NAME")
+	rdsUsername := os.Getenv("RDS_USERNAME")
+	rdsPassword := os.Getenv("RDS_PASSWORD")
+	sourceName := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
+		rdsUsername, rdsPassword, rdsHostname, rdsPort, rdsDbName)
+	log.Print("DB connection string: " + sourceName)
+	ctx.Db, err = sql.Open("mysql", sourceName)
 
 	if err != nil {
-		log.Print(err)
-		log.Fatal("Failed to set up database opener.")
+		return sourceName, handle("Failed to set up database opener", err)
 	}
 	if err = ctx.Db.Ping(); err != nil {
-		log.Print(err)
-		log.Fatal("Failed to ping database.")
+		return sourceName, handle("Failed to ping database", err)
 	}
 	CreateTable(ctx)
 	log.Print("Successfully checked database.")
+	return sourceName, err
 }
 
 // CreateTable creates the table and schema in the db if needed.
