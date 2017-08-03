@@ -18,7 +18,7 @@ func init() {
 	testServer = serverTesting()
 }
 
-func ctxTesting(t *testing.T) (sqlmock.Sqlmock, *Context) {
+func testSetup(t *testing.T) (sqlmock.Sqlmock, *Context) {
 	log.SetOutput(os.Stderr)
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -27,12 +27,16 @@ func ctxTesting(t *testing.T) (sqlmock.Sqlmock, *Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sess := session.Must(session.NewSession())
+	region := "us-west-2"
+	sess.Config.Region = &region
 	ctx := &Context{
 		os: afero.NewMemMapFs(),
 		Db: db,
-		svcS3: s3.New(session.Must(session.NewSession())),
+		svcS3: s3.New(sess),
 	}
 	ctx.svcS3.Endpoint = testServer.URL
+	clientList = FakeClientList
 	return mock, ctx
 }
 
@@ -45,7 +49,7 @@ func serverTesting() (serv *testutil.HTTPServer) {
 
 func TestDbUpdateStage(t *testing.T) {
 	// Setup
-	mock, ctx := ctxTesting(t)
+	mock, ctx := testSetup(t)
 	result := sqlmock.NewResult(0, 0)
 
 	mock.ExpectQuery("select VersionNum from entries").WithArgs("apples").WillReturnRows(testRows)
@@ -70,7 +74,7 @@ func TestDbUpdateStage(t *testing.T) {
 
 func TestDbNewVersions(t *testing.T) {
 	// Setup
-	mock, ctx := ctxTesting(t)
+	mock, ctx := testSetup(t)
 	result := sqlmock.NewResult(0, 0)
 
 	mock.ExpectQuery("select VersionNum from entries").WithArgs("apple").WillReturnRows(testRows)
@@ -92,7 +96,7 @@ func TestDbNewVersions(t *testing.T) {
 
 func TestDbNewVersion(t *testing.T) {
 	// Setup
-	mock, ctx := ctxTesting(t)
+	mock, ctx := testSetup(t)
 	result := sqlmock.NewResult(0, 0)
 
 	mock.ExpectQuery("select VersionNum from entries").WithArgs("apple").WillReturnRows(testRows)
