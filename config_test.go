@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoadSyncFolders(t *testing.T) {
-	_, ctx := ctxTesting(t)
+	_, ctx := testSetup(t)
 	ioutilReadFile = FakeIoutilReadFile
 	loadConfigFile(ctx)
 	assert.Equal(t, "rsync://ftp.ncbi.nih.gov", ctx.Server)

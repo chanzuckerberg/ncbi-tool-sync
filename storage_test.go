@@ -7,7 +7,7 @@ import (
 )
 
 func TestSetupDatabase(t *testing.T) {
-	_, ctx := ctxTesting(t)
+	_, ctx := testSetup(t)
 	res, _ := setupDatabase(ctx)
 	actual := ctx.Db
 	expected := &sql.DB{}

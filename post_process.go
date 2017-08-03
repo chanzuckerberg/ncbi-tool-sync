@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"path/filepath"
+	"errors"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
@@ -59,7 +60,9 @@ func getModTime(ctx *Context, pathName string,
 	} else {
 		_, present = cache[dir][file]
 		if !present {
-			log.Print("Error in getting FTP listing. Expected to find file in cached listing.")
+			err = errors.New("")
+			handle("Error in getting FTP listing. Expected to find file in cached " +
+				"listing.", err)
 			return ""
 		}
 	}

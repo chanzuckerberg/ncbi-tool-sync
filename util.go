@@ -35,7 +35,8 @@ func generateHash(path string, num int) (string, error) {
 
 // Finds the latest version number of the file. Queries the database for the
 // latest version of the file.
-func lastVersionNum(ctx *Context, file string, inclArchive bool) int {
+var lastVersionNum = lastVersionNumDb
+func lastVersionNumDb(ctx *Context, file string, inclArchive bool) int {
 	num := -1
 	var err error
 	var rows *sql.Rows

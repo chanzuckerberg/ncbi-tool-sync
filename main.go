@@ -59,5 +59,5 @@ func main() {
 	}()
 
 	// Run immediately to start with. Next run is scheduled after completion.
-	callSyncFlow(&ctx)
+	callSyncFlow(&ctx, true)
 }

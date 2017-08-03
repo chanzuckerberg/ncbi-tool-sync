@@ -8,11 +8,11 @@ import (
 )
 
 func TestHandle(t *testing.T) {
-	x := errors.New("this is a test error")
+	x := errors.New("this is a test error!")
 	y := handle("hello there", x)
 	actual := y.Error()
-	expected := "hello there. this is a test error"
-	assert.Equal(t, actual, expected)
+	expected := "hello there. this is a test error!"
+	assert.Equal(t, expected, actual)
 }
 
 func TestGetUserHome(t *testing.T) {
@@ -22,7 +22,7 @@ func TestGetUserHome(t *testing.T) {
 }
 
 func TestMoveOldFileDb(t *testing.T) {
-	mock, ctx := ctxTesting(t)
+	mock, ctx := testSetup(t)
 	result := sqlmock.NewResult(0, 0)
 	mock.ExpectExec("update entries").WithArgs("apple", "banana", 2).WillReturnResult(result)
 

@@ -21,7 +21,7 @@ import (
 // callSyncFlow calls the Rsync workflow. Executes a dry run first for
 // processing. Then runs the sync file operations. Finally updates the db with
 // changes.
-func callSyncFlow(ctx *Context) error {
+func callSyncFlow(ctx *Context, repeat bool) error {
 	log.Print("Start of sync flow...")
 	var err error
 
@@ -33,7 +33,10 @@ func callSyncFlow(ctx *Context) error {
 	// Offset scheduling of next run so it'll only schedule after one finishes
 	gocron.Clear()
 	defer func() {
-		gocron.Every(24).Hours().Do(callSyncFlow, ctx)
+		if !repeat {
+			return
+		}
+		gocron.Every(24).Hours().Do(callSyncFlow, ctx, true)
 		log.Print("Next run has been scheduled...")
 		<-gocron.Start()
 	}()
@@ -136,6 +139,9 @@ func dryRunStage(ctx *Context) (syncResult, error) {
 		r.modified = append(r.modified, resp.modified...)
 		r.deleted = append(r.deleted, resp.deleted...)
 	}
+	sort.Strings(r.newF)
+	sort.Strings(r.modified)
+	sort.Strings(r.deleted)
 
 	log.Print("Done with dry run...\nParsing changes...")
 	log.Printf("New on remote: %s", r.newF)
@@ -158,7 +164,8 @@ type syncResult struct {
 
 // Runs a dry sync of main files from the source to local disk and
 // parses the itemized changes.
-func getChanges(ctx *Context, folder syncFolder) (syncResult,
+var getChanges = getChangesSync
+func getChangesSync(ctx *Context, folder syncFolder) (syncResult,
 	error) {
 	// Setup
 	log.Print("Running dry run...")
@@ -257,7 +264,7 @@ func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
 	// Get FTP listing and metadata
 	var resp []*ftp.Entry
 	for _, dir := range folderSet.List() {
-		resp, err = client.List(dir.(string))
+		resp, err = clientList(client, dir.(string))
 		if err != nil {
 			return res, handle("Error in FTP listing.", err)
 		}
@@ -267,9 +274,9 @@ func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
 			if !toInspect.Has(name) || entry.Type != 0 {
 				continue
 			}
-			time := entry.Time.Format(time.RFC3339)
-			time = time[:len(time)-1]
-			res[name] = fInfo{name, time, int(entry.Size)}
+			t := entry.Time.Format(time.RFC3339)
+			t = t[:len(t)-1]
+			res[name] = fInfo{name, t, int(entry.Size)}
 		}
 	}
 	return res, err
@@ -283,7 +290,8 @@ func moveOldFile(ctx *Context, file string) error {
 	log.Print("Archiving old version of: " + file)
 	num := lastVersionNum(ctx, file, false)
 	if num < 1 {
-		return errors.New("no previous unarchived version found in db")
+		err = errors.New("")
+		return handle("No previous unarchived version found in db", err)
 	}
 	key, err := generateHash(file, num)
 	if err != nil {
@@ -388,7 +396,8 @@ func putObject(ctx *Context, onDisk string, uploadKey string) error {
 		Key:    aws.String(uploadKey),
 	})
 	awsOutput(fmt.Sprintf("%#v", output))
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(),
+		"IllegalLocationConstraintException") {
 		return handle(fmt.Sprintf("Error in file upload of %s to S3.", onDisk), err)
 	}
 
