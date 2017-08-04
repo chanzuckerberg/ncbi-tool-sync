@@ -21,7 +21,9 @@ import (
 // callSyncFlow calls the Rsync workflow. Executes a dry run first for
 // processing. Then runs the sync file operations. Finally updates the db with
 // changes.
-func callSyncFlow(ctx *Context, repeat bool) error {
+var callSyncFlow = callSyncFlowRepeat
+
+func callSyncFlowRepeat(ctx *Context, repeat bool) error {
 	log.Print("Start of sync flow...")
 	var err error
 
@@ -36,7 +38,7 @@ func callSyncFlow(ctx *Context, repeat bool) error {
 		if !repeat {
 			return
 		}
-		gocron.Every(24).Hours().Do(callSyncFlow, ctx, true)
+		gocron.Every(24).Hours().Do(callSyncFlowRepeat, ctx, true)
 		log.Print("Next run has been scheduled...")
 		<-gocron.Start()
 	}()
@@ -78,11 +80,11 @@ func newFilesOperations(ctx *Context, newF []string) {
 	var err error
 	for _, file := range newF {
 		if err = copyFileFromRemote(ctx, file); err != nil {
-			handle("Error in copying new file from remote.", err)
+			errOut("Error in copying new file from remote.", err)
 			continue
 		}
 		if err = putObject(ctx, ctx.Temp+file, file); err != nil {
-			handle("Error in uploading new file to S3.", err)
+			errOut("Error in uploading new file to S3.", err)
 		}
 	}
 }
@@ -93,10 +95,10 @@ func deletedFilesOperations(ctx *Context, newF []string) {
 	var err error
 	for _, file := range newF {
 		if err = moveOldFile(ctx, file); err != nil {
-			handle("Error in moving deleted file to archive.", err)
+			errOut("Error in moving deleted file to archive.", err)
 		}
 		if err = deleteObject(ctx, file); err != nil {
-			handle("Error in deleting file.", err)
+			errOut("Error in deleting file.", err)
 		}
 	}
 }
@@ -108,17 +110,17 @@ func modifiedFilesOperations(ctx *Context, modified []string) {
 	var err error
 	for _, file := range modified {
 		if err = copyFileFromRemote(ctx, file); err != nil {
-			handle("Error in copying modified file from remote.", err)
+			errOut("Error in copying modified file from remote.", err)
 			continue
 		}
 		if err = moveOldFile(ctx, file); err != nil {
-			handle("Error in moving modified file to archive.", err)
+			errOut("Error in moving modified file to archive.", err)
 		}
 		if err = deleteObject(ctx, file); err != nil {
-			handle("Error in deleting old modified file copies.", err)
+			errOut("Error in deleting old modified file copies.", err)
 		}
 		if err = putObject(ctx, ctx.Temp+file, file); err != nil {
-			handle("Error in uploading new version of file to S3.", err)
+			errOut("Error in uploading new version of file to S3.", err)
 		}
 	}
 }
@@ -165,6 +167,7 @@ type syncResult struct {
 // Runs a dry sync of main files from the source to local disk and
 // parses the itemized changes.
 var getChanges = getChangesSync
+
 func getChangesSync(ctx *Context, folder syncFolder) (syncResult,
 	error) {
 	// Setup
@@ -243,7 +246,7 @@ func getPreviousState(ctx *Context, folder syncFolder) (map[string]fInfo,
 		}
 		modTime, err = getDbModTime(ctx, name)
 		if err != nil {
-			handle("Error in getting db modTime", err)
+			errOut("Error in getting db modTime", err)
 			modTime = ""
 		}
 		pastState[name] = fInfo{name, modTime, size}
@@ -260,7 +263,11 @@ func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
 	if err != nil {
 		return res, handle("Error in connecting to FTP server.", err)
 	}
-	defer client.Quit()
+	defer func() {
+		if err = client.Quit(); err != nil {
+			errOut("Error in quitting client", err)
+		}
+	}()
 	// Get FTP listing and metadata
 	var resp []*ftp.Entry
 	for _, dir := range folderSet.List() {
@@ -298,10 +305,10 @@ func moveOldFile(ctx *Context, file string) error {
 		return handle("Error in generating checksum.", err)
 	}
 	if err = moveOldFileOperations(ctx, file, key); err != nil {
-		handle("Error in operation to move old file to archive.", err)
+		errOut("Error in operation to move old file to archive.", err)
 	}
 	if err = moveOldFileDb(ctx, key, file, num); err != nil {
-		handle("Error in updating db entry for old file.", err)
+		errOut("Error in updating db entry for old file.", err)
 	}
 	return err
 }
@@ -325,7 +332,7 @@ func moveOldFileOperations(ctx *Context, file string, key string) error {
 		// Handle via S3 SDK
 		err = copyOnS3(ctx, file, key, svc)
 		if err != nil {
-			handle("Error in copying file on S3.", err)
+			errOut("Error in copying file on S3.", err)
 		}
 	} else {
 		log.Print("Large file handling...")
@@ -334,7 +341,7 @@ func moveOldFileOperations(ctx *Context, file string, key string) error {
 		cmd := fmt.Sprintf(template, ctx.Bucket, file, ctx.Bucket, key)
 		_, _, err = commandVerbose(cmd)
 		if err != nil {
-			handle("Error in moving file on S3 via CLI.", err)
+			errOut("Error in moving file on S3 via CLI.", err)
 		}
 	}
 	return err
@@ -386,7 +393,11 @@ func putObject(ctx *Context, onDisk string, uploadKey string) error {
 	if err != nil {
 		return handle("Error in opening file on disk.", err)
 	}
-	defer local.Close()
+	defer func() {
+		if err = local.Close(); err != nil {
+			errOut("Error in closing local file", err)
+		}
+	}()
 
 	// Upload to S3
 	uploader := s3manager.NewUploader(sess)
@@ -424,7 +435,9 @@ func copyOnS3(ctx *Context, file string, key string, svc *s3.S3) error {
 }
 
 // Gets the size of a file on S3.
-func fileSizeOnS3(ctx *Context, file string, svc *s3.S3) (int, error) {
+var fileSizeOnS3 = fileSizeOnS3Svc
+
+func fileSizeOnS3Svc(ctx *Context, file string, svc *s3.S3) (int, error) {
 	var result int
 	input := &s3.HeadObjectInput{
 		Bucket: aws.String(ctx.Bucket),

@@ -15,7 +15,11 @@ func getServerListing(dir string) (map[string]string,
 	if err != nil {
 		return FileToTime, handle("Error in connecting to FTP server.", err)
 	}
-	defer client.Quit()
+	defer func() {
+		if err = client.Quit(); err != nil {
+			errOut("Error in quitting FTP connection", err)
+		}
+	}()
 	entries, err := clientList(client, dir)
 	if err != nil {
 		return FileToTime, handle("Error in FTP listing.", err)
@@ -30,12 +34,14 @@ func getServerListing(dir string) (map[string]string,
 }
 
 var clientList = clientListFtp
+
 func clientListFtp(client *ftp.ServerConn, dir string) ([]*ftp.Entry, error) {
 	return client.List(dir)
 }
 
 // Connects to the FTP server and returns the client.
 var connectToServer = connectToServerFtp
+
 func connectToServerFtp() (*ftp.ServerConn, error) {
 	addr := "ftp.ncbi.nih.gov:21"
 	client, err := ftp.Dial(addr)
