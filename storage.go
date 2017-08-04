@@ -9,7 +9,9 @@ import (
 )
 
 // setupDatabase sets up the db and checks connection conditions
-func setupDatabase(ctx *Context) (string, error) {
+var setupDatabase = setupDatabaseWithCtx
+
+func setupDatabaseWithCtx(ctx *Context) (string, error) {
 	var err error
 	// Setup RDS db from env variables
 	rdsHostname := os.Getenv("RDS_HOSTNAME")

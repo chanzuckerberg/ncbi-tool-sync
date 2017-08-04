@@ -1,15 +1,15 @@
 package main
 
 import (
-	"log"
-	"github.com/smallfish/simpleyaml"
-	"menteslibres.net/gosexy/to"
-	"github.com/spf13/afero"
-	"os"
-	"io/ioutil"
-	"os/user"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/smallfish/simpleyaml"
+	"github.com/spf13/afero"
+	"io/ioutil"
+	"log"
+	"menteslibres.net/gosexy/to"
+	"os"
+	"os/user"
 )
 
 // Gets the full path of the user's home directory
@@ -23,25 +23,32 @@ func getUserHome() string {
 }
 
 // Loads the configuration file and starts db connection.
-func setupConfig(ctx *Context) {
+func setupConfig(ctx *Context) error {
 	loadConfigFile(ctx)
 
 	ctx.UserHome = getUserHome()
 	ctx.os = afero.NewOsFs() // Interface for file system
 	ctx.Temp = ctx.UserHome + "/temp"
-	ctx.os.MkdirAll(ctx.Temp, os.ModePerm)
+	err := ctx.os.MkdirAll(ctx.Temp, os.ModePerm)
+	if err != nil {
+		return handle("Error in making temp dir", err)
+	}
 	ctx.svcS3 = s3.New(session.Must(session.NewSession()))
 
 	if serv := os.Getenv("SERVER"); serv != "" {
 		ctx.Server = serv
 	}
 	if region := os.Getenv("AWS_REGION"); region == "" {
-		os.Setenv("AWS_REGION", "us-west-2")
+		if err = os.Setenv("AWS_REGION", "us-west-2"); err != nil {
+			return handle("Error in setting region", err)
+		}
 	}
+	return err
 }
 
 // Loads config details from the config file.
 var ioutilReadFile = ioutil.ReadFile
+
 func loadConfigFile(ctx *Context) {
 	source, err := ioutilReadFile("config.yaml")
 	if err != nil {

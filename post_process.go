@@ -2,9 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"path/filepath"
-	"errors"
 )
 
 // Processes changes for new, modified, and deleted files. Modified
@@ -32,14 +32,18 @@ func dbNewVersions(ctx *Context, files []string) error {
 	cache := make(map[string]map[string]string)
 
 	for _, file := range files {
-		dbNewVersion(ctx, file, cache)
+		if err := dbNewVersion(ctx, file, cache); err != nil {
+			errOut("Error in adding new version to db", err)
+		}
 	}
 	return nil
 }
 
 // Gets the date modified times from the FTP server utilizing a
 // directory listing cache.
-func getModTime(ctx *Context, pathName string,
+var getModTime = getModTimeFTP
+
+func getModTimeFTP(pathName string,
 	cache map[string]map[string]string) string {
 	// Workaround for avoiding FTP call if in test mode. Can be replaced by
 	// mocking the FTP interface.
@@ -55,13 +59,13 @@ func getModTime(ctx *Context, pathName string,
 		// Get listing from server
 		cache[dir], err = getServerListing(dir)
 		if err != nil {
-			handle("Error in getting listing from FTP server.", err)
+			errOut("Error in getting listing from FTP server.", err)
 		}
 	} else {
 		_, present = cache[dir][file]
 		if !present {
 			err = errors.New("")
-			handle("Error in getting FTP listing. Expected to find file in cached " +
+			errOut("Error in getting FTP listing. Expected to find file in cached "+
 				"listing.", err)
 			return ""
 		}
@@ -104,7 +108,7 @@ func dbNewVersion(ctx *Context, pathName string,
 	}
 
 	// Set datetime modified using directory listing cache
-	modTime := getModTime(ctx, pathName, cache)
+	modTime := getModTime(pathName, cache)
 
 	// Insert into database
 	if modTime != "" {

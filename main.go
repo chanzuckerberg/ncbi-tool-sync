@@ -2,11 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/spf13/afero"
 	"io"
 	"log"
 	"os"
-	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 // Context holds application state variables
@@ -47,9 +47,11 @@ func main() {
 
 	// General config
 	ctx := Context{}
-	setupConfig(&ctx)
+	if err = setupConfig(&ctx); err != nil {
+		log.Fatal("Error in setting up configuration: ", err)
+	}
 	if _, err = setupDatabase(&ctx); err != nil {
-		log.Fatal("Error in db setup:", err)
+		log.Fatal("Error in db setup: ", err)
 	}
 	defer func() {
 		err = ctx.Db.Close()
@@ -59,5 +61,7 @@ func main() {
 	}()
 
 	// Run immediately to start with. Next run is scheduled after completion.
-	callSyncFlow(&ctx, true)
+	if err = callSyncFlow(&ctx, true); err != nil {
+		errOut("Error in calling sync flow", err)
+	}
 }

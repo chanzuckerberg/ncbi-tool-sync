@@ -1,13 +1,16 @@
 package main
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"log"
+	"testing"
 )
 
 func TestLoadSyncFolders(t *testing.T) {
 	_, ctx := testSetup(t)
+	tmp := ioutilReadFile
 	ioutilReadFile = FakeIoutilReadFile
+	defer func() { ioutilReadFile = tmp }()
 	loadConfigFile(ctx)
 	assert.Equal(t, "rsync://ftp.ncbi.nih.gov", ctx.Server)
 	assert.Equal(t, "czbiohub-ncbi-store", ctx.Bucket)
@@ -38,4 +41,23 @@ syncFolders:
     flags:
       - exclude '.*'`
 	return []byte(out), nil
+}
+
+func TestSetupConfig(t *testing.T) {
+	_, ctx := testSetup(t)
+	tmp := ioutilReadFile
+	ioutilReadFile = FakeIoutilReadFile
+	defer func() { ioutilReadFile = tmp }()
+	err := setupConfig(ctx)
+	ane := assert.NotEmpty
+	ane(t, ctx.Db)
+	ane(t, ctx.os)
+	ane(t, ctx.Server)
+	ane(t, ctx.Bucket)
+	ane(t, ctx.syncFolders)
+	log.Println(ctx.syncFolders)
+	ane(t, ctx.UserHome)
+	ane(t, ctx.Temp)
+	ane(t, ctx.svcS3)
+	assert.Nil(t, err)
 }

@@ -36,6 +36,7 @@ func generateHash(path string, num int) (string, error) {
 // Finds the latest version number of the file. Queries the database for the
 // latest version of the file.
 var lastVersionNum = lastVersionNumDb
+
 func lastVersionNumDb(ctx *Context, file string, inclArchive bool) int {
 	num := -1
 	var err error
@@ -52,15 +53,19 @@ func lastVersionNumDb(ctx *Context, file string, inclArchive bool) int {
 			file)
 	}
 	if err != nil {
-		handle("Error in getting VersionNum.", err)
+		errOut("Error in getting VersionNum.", err)
 		return num
 	}
-	defer rows.Close()
+	defer func() {
+		if err = rows.Close(); err != nil {
+			errOut("Error in closing rows", err)
+		}
+	}()
 
 	if rows.Next() {
 		err = rows.Scan(&num)
 		if err != nil {
-			handle("Error scanning row.", err)
+			errOut("Error scanning row.", err)
 		}
 	}
 	return num
@@ -78,6 +83,7 @@ func awsOutput(input string) {
 
 // Executes a shell command and returns the stdout, stderr, and err
 var commandWithOutput = commandWithOutputFunc
+
 func commandWithOutputFunc(input string) (string, string, error) {
 	cmd := exec.Command("sh", "-cx", input)
 	var stdout, stderr bytes.Buffer
@@ -100,7 +106,7 @@ func commandVerbose(input string) (string, string, error) {
 		log.Print(stderr)
 	}
 	if err != nil {
-		handle("Error in running command.", err)
+		errOut("Error in running command.", err)
 	} else {
 		log.Print("Command ran successfully.")
 	}
@@ -118,7 +124,7 @@ func commandVerboseOnErr(input string) (string, string, error) {
 		if stderr != "" {
 			log.Print(stderr)
 		}
-		handle("Error in running command.", err)
+		errOut("Error in running command.", err)
 	} else {
 		log.Print("Command ran successfully.")
 	}
@@ -143,4 +149,23 @@ func handle(input string, err error) error {
 	log.Printf("[error] in %s[%s:%d] %s",
 		runtime.FuncForPC(pc).Name(), fn, line, input)
 	return errors.New(input)
+}
+
+func errOut(input string, err error) {
+	if err == nil {
+		return
+	}
+	pc, fn, line, ok := runtime.Caller(1)
+	if input[len(input)-1:] != "." {
+		input += "."
+	}
+	input += " " + err.Error()
+	if !ok {
+		log.Printf("[error] %s", input)
+		return
+	}
+	p := strings.Split(fn, "/")
+	fn = p[len(p)-1]
+	log.Printf("[error] in %s[%s:%d] %s",
+		runtime.FuncForPC(pc).Name(), fn, line, input)
 }

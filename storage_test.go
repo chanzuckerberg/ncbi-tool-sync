@@ -1,9 +1,9 @@
 package main
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
 	"database/sql"
+	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestSetupDatabase(t *testing.T) {
@@ -12,5 +12,12 @@ func TestSetupDatabase(t *testing.T) {
 	actual := ctx.Db
 	expected := &sql.DB{}
 	assert.IsType(t, actual, expected)
-	assert.Contains(t,  res,"@tcp(")
+	assert.Contains(t, res, "@tcp(")
+}
+
+func TestCreateTable(t *testing.T) {
+	mock, ctx := testSetup(t)
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(testResult)
+	CreateTable(ctx)
+	assert.Nil(t, mock.ExpectationsWereMet())
 }
