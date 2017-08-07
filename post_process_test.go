@@ -33,7 +33,7 @@ func testSetup(t *testing.T) (sqlmock.Sqlmock, *context) {
 	sess.Config.Region = &region
 	ctx := &context{
 		os:    afero.NewMemMapFs(),
-		Db:    db,
+		db:    db,
 		svcS3: s3.New(sess),
 	}
 	ctx.svcS3.Endpoint = testServer.URL

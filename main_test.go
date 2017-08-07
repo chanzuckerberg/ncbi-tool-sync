@@ -21,7 +21,7 @@ func TestMainCall(t *testing.T) {
 func FakeSetupDatabase(ctx *context) (string, error) {
 	db, mock, _ := sqlmock.New()
 	mock.ExpectClose()
-	ctx.Db = db
+	ctx.db = db
 	return "", nil
 }
 

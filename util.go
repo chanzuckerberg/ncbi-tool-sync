@@ -42,11 +42,11 @@ func lastVersionNumDb(ctx *context, file string, inclArchive bool) int {
 
 	// Query
 	if inclArchive {
-		rows, err = ctx.Db.Query("select VersionNum from entries "+
+		rows, err = ctx.db.Query("select VersionNum from entries "+
 			"where PathName=? order by VersionNum desc", file)
 	} else {
 		// Specify not to include archived entries
-		rows, err = ctx.Db.Query("select VersionNum from entries "+
+		rows, err = ctx.db.Query("select VersionNum from entries "+
 			"where PathName=? and ArchiveKey is null order by VersionNum desc",
 			file)
 	}
