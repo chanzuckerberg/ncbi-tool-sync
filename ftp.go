@@ -5,10 +5,9 @@ import (
 	"time"
 )
 
-// Gets a listing of files and modified times from the FTP server.
-// Returns a map of the file pathName to the modTime.
-func getServerListing(dir string) (map[string]string,
-	error) {
+// getServerListing gets a listing of files and modified times from the FTP
+// server. Returns a map of the file pathName to the modTime.
+func getServerListing(dir string) (map[string]string, error) {
 	// Open FTP connection
 	FileToTime := make(map[string]string)
 	client, err := connectToServer()
@@ -35,13 +34,16 @@ func getServerListing(dir string) (map[string]string,
 
 var clientList = clientListFtp
 
+// clientListFtp calls the list command on the FTP client. Dependency
+// injection to aid in testing.
 func clientListFtp(client *ftp.ServerConn, dir string) ([]*ftp.Entry, error) {
 	return client.List(dir)
 }
 
-// Connects to the FTP server and returns the client.
 var connectToServer = connectToServerFtp
 
+// connectToServerFtp connects to the FTP server and returns the client
+// connection.
 func connectToServerFtp() (*ftp.ServerConn, error) {
 	addr := "ftp.ncbi.nih.gov:21"
 	client, err := ftp.Dial(addr)

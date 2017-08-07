@@ -18,12 +18,12 @@ import (
 	"time"
 )
 
-// callSyncFlow calls the Rsync workflow. Executes a dry run first for
-// processing. Then runs the sync file operations. Finally updates the db with
-// changes.
 var callSyncFlow = callSyncFlowRepeat
 
-func callSyncFlowRepeat(ctx *Context, repeat bool) error {
+// callSyncFlowRepeat calls the Rsync workflow. Executes a dry run first for
+// identifying changes. Then runs the actual file sync operations. Finally
+// updates the db with changes. Gocron schedules repeating runs.
+func callSyncFlowRepeat(ctx *context, repeat bool) error {
 	log.Print("Start of sync flow...")
 	var err error
 
@@ -32,7 +32,8 @@ func callSyncFlowRepeat(ctx *Context, repeat bool) error {
 		return handle("Failed to ping database. Aborting run.", err)
 	}
 
-	// Offset scheduling of next run so it'll only schedule after one finishes
+	// Offset scheduling of next run so it'll only schedule after this one
+	// finishes.
 	gocron.Clear()
 	defer func() {
 		if !repeat {
@@ -43,7 +44,7 @@ func callSyncFlowRepeat(ctx *Context, repeat bool) error {
 		<-gocron.Start()
 	}()
 
-	// Dry run analysis stage
+	// Dry run analysis stage for identifying file changes.
 	toSync, err := dryRunStage(ctx)
 	if err != nil {
 		return handle("Error in dry run stage.", err)
@@ -62,8 +63,8 @@ func callSyncFlowRepeat(ctx *Context, repeat bool) error {
 	return err
 }
 
-// Executes the actual file operations on local disk and S3.
-func fileOperationStage(ctx *Context, res syncResult) {
+// fileOperationStage executes the actual file operations on local disk and S3.
+func fileOperationStage(ctx *context, res syncResult) {
 	log.Print("Beginning file operations stage.")
 
 	log.Print("Going to handle new file operations...")
@@ -74,9 +75,9 @@ func fileOperationStage(ctx *Context, res syncResult) {
 	deletedFilesOperations(ctx, res.deleted)
 }
 
-// newFilesOperations executes operations for a single file at a time for new
-// files.
-func newFilesOperations(ctx *Context, newF []string) {
+// newFilesOperations executes operations for new files. Copies files from
+// remote server and uploads to S3.
+func newFilesOperations(ctx *context, newF []string) {
 	var err error
 	for _, file := range newF {
 		if err = copyFileFromRemote(ctx, file); err != nil {
@@ -89,9 +90,9 @@ func newFilesOperations(ctx *Context, newF []string) {
 	}
 }
 
-// deletedFilesOperations executes operations for a single file at a time for
-// deleted files.
-func deletedFilesOperations(ctx *Context, newF []string) {
+// deletedFilesOperations executes operations for deleted files. Moves old
+// copies to archive and deletes the current copy.
+func deletedFilesOperations(ctx *context, newF []string) {
 	var err error
 	for _, file := range newF {
 		if err = moveOldFile(ctx, file); err != nil {
@@ -104,9 +105,9 @@ func deletedFilesOperations(ctx *Context, newF []string) {
 }
 
 // modifiedFilesOperations executes a single file at-a-time flow for modified
-// files. Saves on local disk space for new files temporarily before uploading
-// to S3.
-func modifiedFilesOperations(ctx *Context, modified []string) {
+// files. Copies files from remote, moves old files to archive, deletes
+// current copy, and uploads new copy.
+func modifiedFilesOperations(ctx *context, modified []string) {
 	var err error
 	for _, file := range modified {
 		if err = copyFileFromRemote(ctx, file); err != nil {
@@ -125,9 +126,9 @@ func modifiedFilesOperations(ctx *Context, modified []string) {
 	}
 }
 
-// Analysis stage of getting itemized output from rsync and parsing for new,
+// dryRunStage identifies changes in the files and sorts them into new,
 // modified, and deleted files.
-func dryRunStage(ctx *Context) (syncResult, error) {
+func dryRunStage(ctx *context) (syncResult, error) {
 	log.Print("Beginning dry run stage.")
 	r := syncResult{}
 
@@ -152,23 +153,25 @@ func dryRunStage(ctx *Context) (syncResult, error) {
 	return r, nil
 }
 
+// An fInfo represents file path name, modified time, and size in bytes.
 type fInfo struct {
 	name    string
 	modTime string
 	size    int
 }
 
+// A syncResult represents lists of new, modified, and deleted files.
 type syncResult struct {
 	newF     []string
 	modified []string
 	deleted  []string
 }
 
-// Runs a dry sync of main files from the source to local disk and
-// parses the itemized changes.
 var getChanges = getChangesSync
 
-func getChangesSync(ctx *Context, folder syncFolder) (syncResult,
+// getChangesSync runs a dry sync of main files from the source to local disk
+// and parses the itemized changes.
+func getChangesSync(ctx *context, folder syncFolder) (syncResult,
 	error) {
 	// Setup
 	log.Print("Running dry run...")
@@ -190,19 +193,20 @@ func getChangesSync(ctx *Context, folder syncFolder) (syncResult,
 	return res, err
 }
 
-// Call rsync dry run to get a list of files to inspect with respect to the
-// rsync filters.
-func getFilteredSet(ctx *Context, folder syncFolder) (*set.Set, *set.Set,
+// getFilteredSet calls an rsync dry run on an empty folder to get a set of
+// files to inspect with respect to the rsync filters. Used to support more
+// robust filtering from rsync's built-in functionality.
+func getFilteredSet(ctx *context, folder syncFolder) (*set.Set, *set.Set,
 	error) {
 	toInspect := set.New()
 	folderSet := set.New()
-	template := "rsync -arzvn --itemize-changes --delete --no-motd " +
+	template := "rsync -arzvn --inplace --itemize-changes --delete --no-motd " +
 		"--copy-links --prune-empty-dirs"
 	for _, flag := range folder.flags {
 		template += " --" + flag
 	}
 	source := ctx.Server + folder.sourcePath + "/"
-	tmp := ctx.UserHome + "/tmp"
+	tmp := ctx.Local + "/synctmp"
 	cmd := fmt.Sprintf("%s %s %s", template, source, tmp)
 	if err := ctx.os.MkdirAll(tmp, os.ModePerm); err != nil {
 		return toInspect, folderSet, handle("Couldn't make local tmp path.", err)
@@ -216,7 +220,11 @@ func getFilteredSet(ctx *Context, folder syncFolder) (*set.Set, *set.Set,
 	return toInspect, folderSet, err
 }
 
-func getPreviousState(ctx *Context, folder syncFolder) (map[string]fInfo,
+// getPreviousState gets a representation of the previous saved state of the
+// folder to sync. Gets the file listing from S3 and then the modified times
+// from the database. Returns a map of the file path names to fInfo metadata
+// structs.
+func getPreviousState(ctx *context, folder syncFolder) (map[string]fInfo,
 	error) {
 	// Get listing from S3 and last modtimes. Represents the previous state of
 	// the directory.
@@ -254,6 +262,9 @@ func getPreviousState(ctx *Context, folder syncFolder) (map[string]fInfo,
 	return pastState, err
 }
 
+// getCurrentState gets a representation of the current state of the folder to
+// sync on the remote server. Gets the file listing and metadata via FTP.
+// Returns a map of the file path names to fInfo metadata structs.
 func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
 	error) {
 	res := make(map[string]fInfo)
@@ -289,9 +300,9 @@ func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
 	return res, err
 }
 
-// Archives a file by moving it from the current storage to the archive
-// folder under an archiveKey name and recording it in the db.
-func moveOldFile(ctx *Context, file string) error {
+// moveOldFile archives a file by moving it from the current directory to the
+// archive folder under an archiveKey name and recording it in the db.
+func moveOldFile(ctx *context, file string) error {
 	// Setup
 	var err error
 	log.Print("Archiving old version of: " + file)
@@ -300,7 +311,7 @@ func moveOldFile(ctx *Context, file string) error {
 		err = errors.New("")
 		return handle("No previous unarchived version found in db", err)
 	}
-	key, err := generateHash(file, num)
+	key, err := generateChecksum(file, num)
 	if err != nil {
 		return handle("Error in generating checksum.", err)
 	}
@@ -315,7 +326,7 @@ func moveOldFile(ctx *Context, file string) error {
 
 // moveOldFileOperations moves the to-be-archived file on S3 to the archive
 // folder under a new file key.
-func moveOldFileOperations(ctx *Context, file string, key string) error {
+func moveOldFileOperations(ctx *context, file string, key string) error {
 	// Move to archive folder
 	svc := ctx.svcS3
 	// Ex: bucket/remote/blast/db/README
@@ -349,7 +360,7 @@ func moveOldFileOperations(ctx *Context, file string, key string) error {
 
 // moveOldFileDb updates the old db entry with a new archive blob for
 // reference.
-func moveOldFileDb(ctx *Context, key string, file string, num int) error {
+func moveOldFileDb(ctx *context, key string, file string, num int) error {
 	query := fmt.Sprintf(
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
@@ -362,8 +373,9 @@ func moveOldFileDb(ctx *Context, key string, file string, num int) error {
 	return err
 }
 
-// Copies one file from remote server to local disk folder with rsync.
-func copyFileFromRemote(ctx *Context, file string) error {
+// copyFileFromRemote copies one file from remote server to local disk folder
+// with a simple rsync call.
+func copyFileFromRemote(ctx *context, file string) error {
 	source := fmt.Sprintf("%s%s", ctx.Server, file)
 	// Ex: $HOME/temp/blast/db
 	log.Print("Local dir to make: " + ctx.Temp + filepath.Dir(file))
@@ -373,18 +385,18 @@ func copyFileFromRemote(ctx *Context, file string) error {
 	}
 	// Ex: $HOME/temp/blast/db/README
 	dest := fmt.Sprintf("%s%s", ctx.Temp, file)
-	template := "rsync -arzv --size-only --no-motd --progress " +
+	template := "rsync -arzv --inplace --size-only --no-motd --progress " +
 		"--copy-links %s %s"
 	cmd := fmt.Sprintf(template, source, dest)
-	_, _, err = commandVerbose(cmd)
+	_, _, err = commandVerboseOnErr(cmd)
 	if err != nil {
 		return handle("Couldn't rsync file to local disk.", err)
 	}
 	return err
 }
 
-// Uploads one file from local disk to S3 with uploadKey.
-func putObject(ctx *Context, onDisk string, uploadKey string) error {
+// putObject uploads one file from local disk to S3 with an uploadKey.
+func putObject(ctx *context, onDisk string, uploadKey string) error {
 	// Setup
 	sess := session.Must(session.NewSession())
 	// Ex: $HOME/temp/blast/db/README
@@ -419,8 +431,9 @@ func putObject(ctx *Context, onDisk string, uploadKey string) error {
 	return err
 }
 
-// Copies a file on S3 from the CopySource to the archive folder with key.
-func copyOnS3(ctx *Context, file string, key string, svc *s3.S3) error {
+// copyOnS3 copies a file on S3 from its current location to the archive folder
+// under a new key.
+func copyOnS3(ctx *context, file string, key string, svc *s3.S3) error {
 	params := &s3.CopyObjectInput{
 		Bucket:     aws.String(ctx.Bucket),
 		CopySource: aws.String(ctx.Bucket + file),
@@ -434,10 +447,10 @@ func copyOnS3(ctx *Context, file string, key string, svc *s3.S3) error {
 	return err
 }
 
-// Gets the size of a file on S3.
 var fileSizeOnS3 = fileSizeOnS3Svc
 
-func fileSizeOnS3Svc(ctx *Context, file string, svc *s3.S3) (int, error) {
+// fileSizeOnS3Svc gets the size of a file on S3.
+func fileSizeOnS3Svc(ctx *context, file string, svc *s3.S3) (int, error) {
 	var result int
 	input := &s3.HeadObjectInput{
 		Bucket: aws.String(ctx.Bucket),
@@ -454,8 +467,8 @@ func fileSizeOnS3Svc(ctx *Context, file string, svc *s3.S3) (int, error) {
 	return result, err
 }
 
-// Deletes an object on S3.
-func deleteObject(ctx *Context, file string) error {
+// deleteObject deletes an object on S3.
+func deleteObject(ctx *context, file string) error {
 	// Setup
 	svc := ctx.svcS3
 	input := &s3.DeleteObjectInput{
@@ -471,6 +484,8 @@ func deleteObject(ctx *Context, file string) error {
 	return err
 }
 
+// listFromRsync gets a list of inspected files from rsync. Used to leverage
+// rsync's built-in filtering capabilities.
 func listFromRsync(out string, base string) *set.Set {
 	res := set.New()
 	lines := strings.Split(out, "\n")
@@ -490,6 +505,9 @@ func listFromRsync(out string, base string) *set.Set {
 	return res
 }
 
+// extractSubfolders parses rsync's stdout and extracts a set of sub-folders
+// that were recursively inspected. Used to make FTP listing calls more
+// efficient per sub-directory.
 func extractSubfolders(out string, base string) *set.Set {
 	res := set.New()
 	lines := strings.Split(out, "\n")
@@ -506,6 +524,9 @@ func extractSubfolders(out string, base string) *set.Set {
 	return res
 }
 
+// combineNames combines the file names from pastState and newState
+// representations. Used to return an overall list of files to compare as
+// new, modified, or deleted.
 func combineNames(pastState map[string]fInfo,
 	newState map[string]fInfo) []string {
 	combined := set.New()
@@ -523,6 +544,9 @@ func combineNames(pastState map[string]fInfo,
 	return res
 }
 
+// fileChangeLogic goes through a list of file names and decides if they are
+// new on remote, modified, deleted, or unchanged. Uses the pastState and
+// newState representations. Returns changes in a syncResult.
 func fileChangeLogic(pastState map[string]fInfo, newState map[string]fInfo,
 	names []string) syncResult {
 	var n, m, d []string // New, modified, deleted
@@ -530,13 +554,17 @@ func fileChangeLogic(pastState map[string]fInfo, newState map[string]fInfo,
 		past, inPast := pastState[f]
 		cur, inCurrent := newState[f]
 		if !inPast && inCurrent {
+			// If not inPast and inCurrent, file is new on remote.
 			n = append(n, f)
 		} else if inPast && !inCurrent {
+			// If inPast and not inCurrent, file is deleted on remote.
 			d = append(d, f)
 		} else {
+			// If file size has changed, it was modified.
 			if past.size != cur.size {
 				m = append(m, f)
 			} else {
+				// Count md5 files as modified if their modTime has changed.
 				if strings.Contains(f, ".md5") &&
 					past.modTime != cur.modTime {
 					m = append(m, f)

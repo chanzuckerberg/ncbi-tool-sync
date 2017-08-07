@@ -45,12 +45,12 @@ func TestMoveOldFileOperations(t *testing.T) {
 	commandWithOutput = commandWithOutputFunc
 }
 
-func FakeFileSizeOnS3(ctx *Context, file string, svc *s3.S3) (int, error) {
+func FakeFileSizeOnS3(ctx *context, file string, svc *s3.S3) (int, error) {
 	return 5000000000, nil
 }
 
 func FakeCmdWithError(cmd string) (string, string, error) {
-	return "peach", "pear", errors.New("THIS SHOULD ERROR")
+	return "peach", "pear", errors.New("This SHOULD error")
 }
 
 func TestMoveOldFileOperationsLarge(t *testing.T) {
@@ -151,7 +151,7 @@ func TestDryRunStage(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func FakeLastVersionNum(ctx *Context, file string, inclArchive bool) int {
+func FakeLastVersionNum(ctx *context, file string, inclArchive bool) int {
 	return 2
 }
 
@@ -183,7 +183,7 @@ func TestDryRunStageWithFake(t *testing.T) {
 	assert.Equal(t, "{[lemon] [lime] [mango]}", fmt.Sprint(res))
 }
 
-func FakeGetChanges(ctx *Context, folder syncFolder) (syncResult, error) {
+func FakeGetChanges(ctx *context, folder syncFolder) (syncResult, error) {
 	res := syncResult{}
 	res.newF = []string{"lemon"}
 	res.modified = []string{"lime"}

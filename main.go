@@ -9,18 +9,19 @@ import (
 	"os"
 )
 
-// Context holds application state variables
-type Context struct {
+// A context holds application state variables.
+type context struct {
 	Db          *sql.DB
 	os          afero.Fs
 	Server      string       `yaml:"server"`
 	Bucket      string       `yaml:"bucket"`
 	syncFolders []syncFolder `yaml:"syncFolders"`
-	UserHome    string
-	Temp        string // Set as $HOME/temp
+	Local       string       // Set as /syncmount
+	Temp        string       // Set as /syncmount/synctemp
 	svcS3       *s3.S3
 }
 
+// A syncFolder represents a folder path to sync and rsync flags as strings.
 type syncFolder struct {
 	sourcePath string
 	flags      []string
@@ -46,7 +47,7 @@ func main() {
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	// General config
-	ctx := Context{}
+	ctx := context{}
 	if err = setupConfig(&ctx); err != nil {
 		log.Fatal("Error in setting up configuration: ", err)
 	}

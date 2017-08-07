@@ -7,11 +7,8 @@ import (
 	"path/filepath"
 )
 
-// Processes changes for new, modified, and deleted files. Modified
-// and deleted files are processed by archiveOldVersions in the temp
-// directory. New and modified files have new versions to be added to
-// the db. Temp folder is deleted after handling.
-func dbUpdateStage(ctx *Context, toSync syncResult) error {
+// dbUpdateStage adds new file versions to the database.
+func dbUpdateStage(ctx *context, toSync syncResult) error {
 	log.Print("Beginning db update stage.")
 	var err error
 
@@ -25,12 +22,11 @@ func dbUpdateStage(ctx *Context, toSync syncResult) error {
 	return err
 }
 
-// Handles a list of files with new versions.
-func dbNewVersions(ctx *Context, files []string) error {
+// dbNewVersions handles a list of files with new versions.
+func dbNewVersions(ctx *context, files []string) error {
 	// Cache is a map of directory names to a map of file names to mod
 	// times.
 	cache := make(map[string]map[string]string)
-
 	for _, file := range files {
 		if err := dbNewVersion(ctx, file, cache); err != nil {
 			errOut("Error in adding new version to db", err)
@@ -39,21 +35,14 @@ func dbNewVersions(ctx *Context, files []string) error {
 	return nil
 }
 
-// Gets the date modified times from the FTP server utilizing a
-// directory listing cache.
 var getModTime = getModTimeFTP
 
-func getModTimeFTP(pathName string,
-	cache map[string]map[string]string) string {
-	// Workaround for avoiding FTP call if in test mode. Can be replaced by
-	// mocking the FTP interface.
-	//_, mock, err := sqlmock.New()
-	//if reflect.ValueOf(ctx.Db).Kind() == reflect.ValueOf(mock).Kind() {
-	//	return ""
-	//}
+// getModTimeFTP gets the date modified times from the FTP server utilizing a
+// directory listing cache.
+func getModTimeFTP(path string, cache map[string]map[string]string) string {
 	var err error
-	dir := filepath.Dir(pathName)
-	file := filepath.Base(pathName)
+	dir := filepath.Dir(path)
+	file := filepath.Base(path)
 	_, present := cache[dir]
 	if !present {
 		// Get listing from server
@@ -75,7 +64,7 @@ func getModTimeFTP(pathName string,
 
 // getDbModTime gets the modified time for the latest file version recorded in
 // the database.
-func getDbModTime(ctx *Context, file string) (string, error) {
+func getDbModTime(ctx *context, file string) (string, error) {
 	var res string
 	err := ctx.Db.QueryRow("select DateModified from entries "+
 		"where PathName=? and DateModified is not null order by VersionNum desc",
@@ -90,11 +79,11 @@ func getDbModTime(ctx *Context, file string) (string, error) {
 	return res, err
 }
 
-// Handles one file with a new version on disk. Finds the proper
-// version number for this new entry. Gets the datetime modified from
-// the FTP server as a workaround for the lack of date modified times
-// after syncing to S3. Adds the new entry into the db.
-func dbNewVersion(ctx *Context, pathName string,
+// dbNewVersion handles one file with a new version on disk. Sets the version
+// number for the new entry. Gets the datetime modified from the FTP server as
+// a workaround for the lack of original date modified times after syncing to
+// S3. Adds the new entry into the db.
+func dbNewVersion(ctx *context, pathName string,
 	cache map[string]map[string]string) error {
 	var err error
 	log.Print("Handling new version of: " + pathName)

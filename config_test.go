@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/stretchr/testify/assert"
-	"log"
 	"testing"
 )
 
@@ -55,8 +54,7 @@ func TestSetupConfig(t *testing.T) {
 	ane(t, ctx.Server)
 	ane(t, ctx.Bucket)
 	ane(t, ctx.syncFolders)
-	log.Println(ctx.syncFolders)
-	ane(t, ctx.UserHome)
+	ane(t, ctx.Local)
 	ane(t, ctx.Temp)
 	ane(t, ctx.svcS3)
 	assert.Nil(t, err)

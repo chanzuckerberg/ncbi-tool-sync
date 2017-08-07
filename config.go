@@ -12,32 +12,38 @@ import (
 	"os/user"
 )
 
-// Gets the full path of the user's home directory
-func getUserHome() string {
-	usr, err := user.Current()
-	if err != nil {
-		log.Print("Couldn't get user's home directory.")
-		log.Fatal(err)
-	}
-	return usr.HomeDir
-}
-
-// Loads the configuration file and starts db connection.
-func setupConfig(ctx *Context) error {
+// setupConfig sets up context variables and connections. context is
+// shared throughout program execution.
+func setupConfig(ctx *context) error {
 	loadConfigFile(ctx)
+	var err error
 
-	ctx.UserHome = getUserHome()
 	ctx.os = afero.NewOsFs() // Interface for file system
-	ctx.Temp = ctx.UserHome + "/temp"
-	err := ctx.os.MkdirAll(ctx.Temp, os.ModePerm)
-	if err != nil {
-		return handle("Error in making temp dir", err)
+
+	// Set the local folder as /syncmount/synctemp, which is the mount point
+	// created in the Dockerfile. If this doesn't exist (e.g. local dev), set the
+	// folder as the running user's home folder ($HOME/synctemp). Check write
+	// privileges.
+	ctx.Local = "/syncmount"
+	if _, err = ctx.os.Stat(ctx.Local); err != nil {
+		ctx.Local = getUserHome()
 	}
+	ctx.Temp = ctx.Local + "/synctemp"
+	if err = ctx.os.MkdirAll(ctx.Temp, os.ModePerm); err != nil {
+		msg := "Error in making temp dir. May not have write privileges"
+		return handle(msg, err)
+	}
+	if _, err = ctx.os.Create(ctx.Temp + "/testFile"); err != nil {
+		msg := "Error in making test file. May not have write privileges"
+		return handle(msg, err)
+	}
+
 	ctx.svcS3 = s3.New(session.Must(session.NewSession()))
 
 	if serv := os.Getenv("SERVER"); serv != "" {
 		ctx.Server = serv
 	}
+	// Set the region as us-west-2 if absent.
 	if region := os.Getenv("AWS_REGION"); region == "" {
 		if err = os.Setenv("AWS_REGION", "us-west-2"); err != nil {
 			return handle("Error in setting region", err)
@@ -46,10 +52,10 @@ func setupConfig(ctx *Context) error {
 	return err
 }
 
-// Loads config details from the config file.
 var ioutilReadFile = ioutil.ReadFile
 
-func loadConfigFile(ctx *Context) {
+// loadConfigFile loads config details from the config file.
+func loadConfigFile(ctx *context) {
 	source, err := ioutilReadFile("config.yaml")
 	if err != nil {
 		log.Fatal("Error in opening config. ", err)
@@ -73,8 +79,8 @@ func loadConfigFile(ctx *Context) {
 	loadSyncFolders(ctx, yml)
 }
 
-func loadSyncFolders(ctx *Context, yml *simpleyaml.Yaml) {
-	// Load sync folder details
+// loadSyncFolders loads the folders to sync and flags from config file.
+func loadSyncFolders(ctx *context, yml *simpleyaml.Yaml) {
 	size, err := yml.Get("syncFolders").GetArraySize()
 	if err != nil {
 		log.Fatal("Error in loading syncFolders. ", err)
@@ -96,4 +102,14 @@ func loadSyncFolders(ctx *Context, yml *simpleyaml.Yaml) {
 		res := syncFolder{name, flags}
 		ctx.syncFolders = append(ctx.syncFolders, res)
 	}
+}
+
+// getUserHome gets the full path of the user's home directory.
+func getUserHome() string {
+	usr, err := user.Current()
+	if err != nil {
+		log.Print("Couldn't get user's home directory.")
+		log.Fatal(err)
+	}
+	return usr.HomeDir
 }
