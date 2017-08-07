@@ -11,8 +11,8 @@ func TestLoadSyncFolders(t *testing.T) {
 	ioutilReadFile = FakeIoutilReadFile
 	defer func() { ioutilReadFile = tmp }()
 	loadConfigFile(ctx)
-	assert.Equal(t, "rsync://ftp.ncbi.nih.gov", ctx.Server)
-	assert.Equal(t, "czbiohub-ncbi-store", ctx.Bucket)
+	assert.Equal(t, "rsync://ftp.ncbi.nih.gov", ctx.server)
+	assert.Equal(t, "czbiohub-ncbi-store", ctx.bucket)
 	assert.Equal(t, 2, len(ctx.syncFolders))
 	ac := assert.Contains
 	ae := assert.Equal
@@ -49,13 +49,13 @@ func TestSetupConfig(t *testing.T) {
 	defer func() { ioutilReadFile = tmp }()
 	err := setupConfig(ctx)
 	ane := assert.NotEmpty
-	ane(t, ctx.Db)
+	ane(t, ctx.db)
 	ane(t, ctx.os)
-	ane(t, ctx.Server)
-	ane(t, ctx.Bucket)
+	ane(t, ctx.server)
+	ane(t, ctx.bucket)
 	ane(t, ctx.syncFolders)
-	ane(t, ctx.Local)
-	ane(t, ctx.Temp)
+	ane(t, ctx.local)
+	ane(t, ctx.temp)
 	ane(t, ctx.svcS3)
 	assert.Nil(t, err)
 }

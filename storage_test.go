@@ -9,7 +9,7 @@ import (
 func TestSetupDatabase(t *testing.T) {
 	_, ctx := testSetup(t)
 	res, _ := setupDatabase(ctx)
-	actual := ctx.Db
+	actual := ctx.db
 	expected := &sql.DB{}
 	assert.IsType(t, actual, expected)
 	assert.Contains(t, res, "@tcp(")

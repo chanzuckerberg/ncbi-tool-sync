@@ -66,7 +66,7 @@ func getModTimeFTP(path string, cache map[string]map[string]string) string {
 // the database.
 func getDbModTime(ctx *context, file string) (string, error) {
 	var res string
-	err := ctx.Db.QueryRow("select DateModified from entries "+
+	err := ctx.db.QueryRow("select DateModified from entries "+
 		"where PathName=? and DateModified is not null order by VersionNum desc",
 		file).Scan(&res)
 	switch {
@@ -101,11 +101,11 @@ func dbNewVersion(ctx *context, pathName string,
 
 	// Insert into database
 	if modTime != "" {
-		_, err = ctx.Db.Exec("insert into entries(PathName, "+
+		_, err = ctx.db.Exec("insert into entries(PathName, "+
 			"VersionNum, DateModified) values(?, ?, ?)", pathName,
 			versionNum, modTime)
 	} else {
-		_, err = ctx.Db.Exec("insert into entries(PathName, "+
+		_, err = ctx.db.Exec("insert into entries(PathName, "+
 			"VersionNum) values(?, ?)", pathName, versionNum)
 	}
 	if err != nil {

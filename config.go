@@ -24,16 +24,16 @@ func setupConfig(ctx *context) error {
 	// created in the Dockerfile. If this doesn't exist (e.g. local dev), set the
 	// folder as the running user's home folder ($HOME/synctemp). Check write
 	// privileges.
-	ctx.Local = "/syncmount"
-	if _, err = ctx.os.Stat(ctx.Local); err != nil {
-		ctx.Local = getUserHome()
+	ctx.local = "/syncmount"
+	if _, err = ctx.os.Stat(ctx.local); err != nil {
+		ctx.local = getUserHome()
 	}
-	ctx.Temp = ctx.Local + "/synctemp"
-	if err = ctx.os.MkdirAll(ctx.Temp, os.ModePerm); err != nil {
+	ctx.temp = ctx.local + "/synctemp"
+	if err = ctx.os.MkdirAll(ctx.temp, os.ModePerm); err != nil {
 		msg := "Error in making temp dir. May not have write privileges"
 		return handle(msg, err)
 	}
-	if _, err = ctx.os.Create(ctx.Temp + "/testFile"); err != nil {
+	if _, err = ctx.os.Create(ctx.temp + "/testFile"); err != nil {
 		msg := "Error in making test file. May not have write privileges"
 		return handle(msg, err)
 	}
@@ -41,7 +41,7 @@ func setupConfig(ctx *context) error {
 	ctx.svcS3 = s3.New(session.Must(session.NewSession()))
 
 	if serv := os.Getenv("SERVER"); serv != "" {
-		ctx.Server = serv
+		ctx.server = serv
 	}
 	// Set the region as us-west-2 if absent.
 	if region := os.Getenv("AWS_REGION"); region == "" {
@@ -69,12 +69,12 @@ func loadConfigFile(ctx *context) {
 	if str, err = yml.Get("server").String(); err != nil {
 		log.Print("No server set in config.yaml. Will try to set from env.")
 	} else {
-		ctx.Server = str
+		ctx.server = str
 	}
 	if str, err = yml.Get("bucket").String(); err != nil {
 		log.Fatal("Error in setting bucket. ", err)
 	}
-	ctx.Bucket = str
+	ctx.bucket = str
 
 	loadSyncFolders(ctx, yml)
 }

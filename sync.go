@@ -28,7 +28,7 @@ func callSyncFlowRepeat(ctx *context, repeat bool) error {
 	var err error
 
 	// Check db
-	if err = ctx.Db.Ping(); err != nil {
+	if err = ctx.db.Ping(); err != nil {
 		return handle("Failed to ping database. Aborting run.", err)
 	}
 
@@ -53,7 +53,7 @@ func callSyncFlowRepeat(ctx *context, repeat bool) error {
 	// File operation stage. Moving actual files around.
 	fileOperationStage(ctx, toSync)
 
-	// Db operation stage. Process changes in the db entries.
+	// db operation stage. Process changes in the db entries.
 	if err = dbUpdateStage(ctx, toSync); err != nil {
 		return handle("Error in processing db changes.", err)
 	}
@@ -84,7 +84,7 @@ func newFilesOperations(ctx *context, newF []string) {
 			errOut("Error in copying new file from remote.", err)
 			continue
 		}
-		if err = putObject(ctx, ctx.Temp+file, file); err != nil {
+		if err = putObject(ctx, ctx.temp+file, file); err != nil {
 			errOut("Error in uploading new file to S3.", err)
 		}
 	}
@@ -120,7 +120,7 @@ func modifiedFilesOperations(ctx *context, modified []string) {
 		if err = deleteObject(ctx, file); err != nil {
 			errOut("Error in deleting old modified file copies.", err)
 		}
-		if err = putObject(ctx, ctx.Temp+file, file); err != nil {
+		if err = putObject(ctx, ctx.temp+file, file); err != nil {
 			errOut("Error in uploading new version of file to S3.", err)
 		}
 	}
@@ -205,8 +205,8 @@ func getFilteredSet(ctx *context, folder syncFolder) (*set.Set, *set.Set,
 	for _, flag := range folder.flags {
 		template += " --" + flag
 	}
-	source := ctx.Server + folder.sourcePath + "/"
-	tmp := ctx.Local + "/synctmp"
+	source := ctx.server + folder.sourcePath + "/"
+	tmp := ctx.local + "/synctmp"
 	cmd := fmt.Sprintf("%s %s %s", template, source, tmp)
 	if err := ctx.os.MkdirAll(tmp, os.ModePerm); err != nil {
 		return toInspect, folderSet, handle("Couldn't make local tmp path.", err)
@@ -232,7 +232,7 @@ func getPreviousState(ctx *context, folder syncFolder) (map[string]fInfo,
 	svc := ctx.svcS3
 	path := folder.sourcePath[1:] // Remove leading forward slash
 	input := &s3.ListObjectsInput{
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(ctx.bucket),
 		Prefix: aws.String(path),
 	}
 	response := []*s3.Object{}
@@ -330,7 +330,7 @@ func moveOldFileOperations(ctx *context, file string, key string) error {
 	// Move to archive folder
 	svc := ctx.svcS3
 	// Ex: bucket/remote/blast/db/README
-	log.Print("Copy from: " + ctx.Bucket + file)
+	log.Print("Copy from: " + ctx.bucket + file)
 	log.Print("Copy-to key: " + "archive/" + key)
 
 	// Get file size
@@ -349,7 +349,7 @@ func moveOldFileOperations(ctx *context, file string, key string) error {
 		log.Print("Large file handling...")
 		// Handle via S3 command line tool
 		template := "aws s3 mv s3://%s%s s3://%s/archive/%s"
-		cmd := fmt.Sprintf(template, ctx.Bucket, file, ctx.Bucket, key)
+		cmd := fmt.Sprintf(template, ctx.bucket, file, ctx.bucket, key)
 		_, _, err = commandVerbose(cmd)
 		if err != nil {
 			errOut("Error in moving file on S3 via CLI.", err)
@@ -364,8 +364,8 @@ func moveOldFileDb(ctx *context, key string, file string, num int) error {
 	query := fmt.Sprintf(
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
-	log.Print("Db query: " + query)
-	_, err := ctx.Db.Exec("update entries set ArchiveKey=? where "+
+	log.Print("db query: " + query)
+	_, err := ctx.db.Exec("update entries set ArchiveKey=? where "+
 		"PathName=? and VersionNum=?;", key, file, num)
 	if err != nil {
 		return handle("Error in updating db entry.", err)
@@ -376,15 +376,15 @@ func moveOldFileDb(ctx *context, key string, file string, num int) error {
 // copyFileFromRemote copies one file from remote server to local disk folder
 // with a simple rsync call.
 func copyFileFromRemote(ctx *context, file string) error {
-	source := fmt.Sprintf("%s%s", ctx.Server, file)
+	source := fmt.Sprintf("%s%s", ctx.server, file)
 	// Ex: $HOME/temp/blast/db
-	log.Print("Local dir to make: " + ctx.Temp + filepath.Dir(file))
-	err := ctx.os.MkdirAll(ctx.Temp+filepath.Dir(file), os.ModePerm)
+	log.Print("Local dir to make: " + ctx.temp + filepath.Dir(file))
+	err := ctx.os.MkdirAll(ctx.temp+filepath.Dir(file), os.ModePerm)
 	if err != nil {
 		return handle("Couldn't make dir.", err)
 	}
 	// Ex: $HOME/temp/blast/db/README
-	dest := fmt.Sprintf("%s%s", ctx.Temp, file)
+	dest := fmt.Sprintf("%s%s", ctx.temp, file)
 	template := "rsync -arzv --inplace --size-only --no-motd --progress " +
 		"--copy-links %s %s"
 	cmd := fmt.Sprintf(template, source, dest)
@@ -415,7 +415,7 @@ func putObject(ctx *context, onDisk string, uploadKey string) error {
 	uploader := s3manager.NewUploader(sess)
 	output, err := uploader.Upload(&s3manager.UploadInput{
 		Body:   local,
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(ctx.bucket),
 		Key:    aws.String(uploadKey),
 	})
 	awsOutput(fmt.Sprintf("%#v", output))
@@ -435,8 +435,8 @@ func putObject(ctx *context, onDisk string, uploadKey string) error {
 // under a new key.
 func copyOnS3(ctx *context, file string, key string, svc *s3.S3) error {
 	params := &s3.CopyObjectInput{
-		Bucket:     aws.String(ctx.Bucket),
-		CopySource: aws.String(ctx.Bucket + file),
+		Bucket:     aws.String(ctx.bucket),
+		CopySource: aws.String(ctx.bucket + file),
 		Key:        aws.String("archive/" + key),
 	}
 	output, err := svc.CopyObject(params)
@@ -453,7 +453,7 @@ var fileSizeOnS3 = fileSizeOnS3Svc
 func fileSizeOnS3Svc(ctx *context, file string, svc *s3.S3) (int, error) {
 	var result int
 	input := &s3.HeadObjectInput{
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(ctx.bucket),
 		Key:    aws.String(file),
 	}
 	output, err := svc.HeadObject(input)
@@ -472,7 +472,7 @@ func deleteObject(ctx *context, file string) error {
 	// Setup
 	svc := ctx.svcS3
 	input := &s3.DeleteObjectInput{
-		Bucket: aws.String(ctx.Bucket),
+		Bucket: aws.String(ctx.bucket),
 		Key:    aws.String(file),
 	}
 

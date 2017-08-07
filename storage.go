@@ -24,10 +24,10 @@ func setupDatabaseWithCtx(ctx *context) (string, error) {
 		rdsUsername, rdsPassword, rdsHostname, rdsPort, rdsDbName)
 	log.Print("DB connection string: " + sourceName)
 
-	if ctx.Db, err = sql.Open("mysql", sourceName); err != nil {
+	if ctx.db, err = sql.Open("mysql", sourceName); err != nil {
 		return sourceName, handle("Failed to set up database opener", err)
 	}
-	if err = ctx.Db.Ping(); err != nil {
+	if err = ctx.db.Ping(); err != nil {
 		return sourceName, handle("Failed to ping database", err)
 	}
 	CreateTable(ctx)
@@ -43,7 +43,7 @@ func CreateTable(ctx *context) {
 		"DateModified DATETIME, " +
 		"ArchiveKey VARCHAR(50), " +
 		"PRIMARY KEY (PathName, VersionNum));"
-	if _, err := ctx.Db.Exec(query); err != nil {
+	if _, err := ctx.db.Exec(query); err != nil {
 		log.Print(err)
 		log.Fatal("Failed to find or create table.")
 	}

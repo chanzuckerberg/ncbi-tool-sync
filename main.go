@@ -11,13 +11,13 @@ import (
 
 // A context holds application state variables.
 type context struct {
-	Db          *sql.DB
+	db          *sql.DB
 	os          afero.Fs
-	Server      string       `yaml:"server"`
-	Bucket      string       `yaml:"bucket"`
+	server      string       `yaml:"server"`
+	bucket      string       `yaml:"bucket"`
 	syncFolders []syncFolder `yaml:"syncFolders"`
-	Local       string       // Set as /syncmount
-	Temp        string       // Set as /syncmount/synctemp
+	local       string // Set as /syncmount
+	temp        string // Set as /syncmount/synctemp
 	svcS3       *s3.S3
 }
 
@@ -55,9 +55,9 @@ func main() {
 		log.Fatal("Error in db setup: ", err)
 	}
 	defer func() {
-		err = ctx.Db.Close()
+		err = ctx.db.Close()
 		if err != nil {
-			log.Print("Db was not closed properly. ", err)
+			log.Print("db was not closed properly. ", err)
 		}
 	}()
 
