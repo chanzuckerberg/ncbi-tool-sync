@@ -170,6 +170,6 @@ func errOut(input string, err error) {
 	}
 	p := strings.Split(fn, "/")
 	fn = p[len(p)-1]
-	log.Printf("[error] in %s[%s:%d] %s",
-		runtime.FuncForPC(pc).Name(), fn, line, input)
+	log.Printf("[error] in %s[%s:%d] %s", runtime.FuncForPC(pc).Name(),
+		fn, line, input)
 }
