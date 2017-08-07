@@ -8,17 +8,11 @@ import (
 )
 
 func TestHandle(t *testing.T) {
-	x := errors.New("THIS SHOULD ERROR!")
+	x := errors.New("This SHOULD error!")
 	y := handle("hello there", x)
 	actual := y.Error()
-	expected := "hello there. THIS SHOULD ERROR!"
+	expected := "hello there. This SHOULD error!"
 	assert.Equal(t, expected, actual)
-}
-
-func TestGetUserHome(t *testing.T) {
-	actual := getUserHome()
-	expected := "/"
-	assert.Contains(t, actual, expected)
 }
 
 func TestMoveOldFileDb(t *testing.T) {
@@ -35,13 +29,13 @@ func TestMoveOldFileDb(t *testing.T) {
 	}
 }
 
-func TestGenerateHash(t *testing.T) {
-	res, _ := generateHash("Apples", 5)
+func TestGenerateChecksum(t *testing.T) {
+	res, _ := generateChecksum("Apples", 5)
 	assert.Equal(t, "8a17a33a281ac505865be8e1b459b998", res)
 }
 
 func FakeCmd(str string) (string, string, error) {
-	err := errors.New("this is an intentional error")
+	err := errors.New("this SHOULD error")
 	return "standard output", "standard error", err
 }
 
@@ -50,7 +44,7 @@ func TestCommandVerboseOnErr(t *testing.T) {
 	stdout, stderr, err := commandVerboseOnErr("ls")
 	assert.Equal(t, "standard output", stdout)
 	assert.Equal(t, "standard error", stderr)
-	assert.Equal(t, "this is an intentional error", err.Error())
+	assert.Equal(t, "this SHOULD error", err.Error())
 	commandWithOutput = commandWithOutputFunc
 }
 

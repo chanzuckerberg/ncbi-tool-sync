@@ -19,7 +19,7 @@ func init() {
 	testServer = serverTesting()
 }
 
-func testSetup(t *testing.T) (sqlmock.Sqlmock, *Context) {
+func testSetup(t *testing.T) (sqlmock.Sqlmock, *context) {
 	log.SetOutput(os.Stderr)
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -31,7 +31,7 @@ func testSetup(t *testing.T) (sqlmock.Sqlmock, *Context) {
 	sess := session.Must(session.NewSession())
 	region := "us-west-2"
 	sess.Config.Region = &region
-	ctx := &Context{
+	ctx := &context{
 		os:    afero.NewMemMapFs(),
 		Db:    db,
 		svcS3: s3.New(sess),

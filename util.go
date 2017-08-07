@@ -15,10 +15,9 @@ import (
 	"strings"
 )
 
-// Generates a hash for the file based on the name, version number,
-// and actual file contents.
-func generateHash(path string, num int) (string, error) {
-	// Add a header
+// generateChecksum generates a checksum for the file based on the name and
+// version number.
+func generateChecksum(path string, num int) (string, error) {
 	var result string
 	key := fmt.Sprintf("%s -- Version %d -- ", path, num)
 	hash := md5.New()
@@ -33,11 +32,10 @@ func generateHash(path string, num int) (string, error) {
 	return result, nil
 }
 
-// Finds the latest version number of the file. Queries the database for the
-// latest version of the file.
 var lastVersionNum = lastVersionNumDb
 
-func lastVersionNumDb(ctx *Context, file string, inclArchive bool) int {
+// lastVersionNumDb finds the latest version number of the file in the db.
+func lastVersionNumDb(ctx *context, file string, inclArchive bool) int {
 	num := -1
 	var err error
 	var rows *sql.Rows
@@ -71,7 +69,7 @@ func lastVersionNumDb(ctx *Context, file string, inclArchive bool) int {
 	return num
 }
 
-// Outputs AWS response if not empty.
+// awsOutput outputs the AWS operation response if not empty.
 func awsOutput(input string) {
 	// Skip if empty response
 	snip := strings.Replace(input, " ", "", -1)
@@ -81,9 +79,10 @@ func awsOutput(input string) {
 	log.Print("AWS response: " + input)
 }
 
-// Executes a shell command and returns the stdout, stderr, and err
 var commandWithOutput = commandWithOutputFunc
 
+// commandWithOutputFunc executes a shell command and returns the stdout,
+// stderr, and err.
 func commandWithOutputFunc(input string) (string, string, error) {
 	cmd := exec.Command("sh", "-cx", input)
 	var stdout, stderr bytes.Buffer
@@ -95,7 +94,8 @@ func commandWithOutputFunc(input string) (string, string, error) {
 	return outResp, errResp, err
 }
 
-// Outputs a system command to log with stdout, stderr, and err output.
+// commandVerbose outputs a system command to log with stdout, stderr, and
+// err output.
 func commandVerbose(input string) (string, string, error) {
 	log.Print("Command: " + input)
 	stdout, stderr, err := commandWithOutput(input)
@@ -113,7 +113,8 @@ func commandVerbose(input string) (string, string, error) {
 	return stdout, stderr, err
 }
 
-// Outputs a system command to log with all output on error.
+// commandVerboseOnErr outputs a system command to log with all output on
+// error.
 func commandVerboseOnErr(input string) (string, string, error) {
 	log.Print("Command: " + input)
 	stdout, stderr, err := commandWithOutput(input)
@@ -131,6 +132,8 @@ func commandVerboseOnErr(input string) (string, string, error) {
 	return stdout, stderr, err
 }
 
+// handle logs errors and information at runtime. Used for easier error
+// tracing up the call stack.
 func handle(input string, err error) error {
 	if err == nil {
 		return err
@@ -151,6 +154,7 @@ func handle(input string, err error) error {
 	return errors.New(input)
 }
 
+// errOut outputs error messages but doesn't create a new error.
 func errOut(input string, err error) {
 	if err == nil {
 		return
