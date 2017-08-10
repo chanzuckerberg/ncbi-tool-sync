@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -30,43 +29,6 @@ func generateChecksum(path string, num int) (string, error) {
 	hashInBytes := hash.Sum(nil)[:16]
 	result = hex.EncodeToString(hashInBytes)
 	return result, nil
-}
-
-var lastVersionNum = lastVersionNumDb
-
-// lastVersionNumDb finds the latest version number of the file in the db.
-func lastVersionNumDb(ctx *context, file string, inclArchive bool) int {
-	num := -1
-	var err error
-	var rows *sql.Rows
-
-	// Query
-	if inclArchive {
-		rows, err = ctx.db.Query("select VersionNum from entries "+
-			"where PathName=? order by VersionNum desc", file)
-	} else {
-		// Specify not to include archived entries
-		rows, err = ctx.db.Query("select VersionNum from entries "+
-			"where PathName=? and ArchiveKey is null order by VersionNum desc",
-			file)
-	}
-	if err != nil {
-		errOut("Error in getting VersionNum.", err)
-		return num
-	}
-	defer func() {
-		if err = rows.Close(); err != nil {
-			errOut("Error in closing rows", err)
-		}
-	}()
-
-	if rows.Next() {
-		err = rows.Scan(&num)
-		if err != nil {
-			errOut("Error scanning row.", err)
-		}
-	}
-	return num
 }
 
 // awsOutput outputs the AWS operation response if not empty.

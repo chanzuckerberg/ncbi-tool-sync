@@ -3,7 +3,14 @@ package main
 import (
 	"github.com/jlaffaye/ftp"
 	"time"
+	"path/filepath"
+	"errors"
 )
+
+// Variable assignments for testing
+var clientList = clientListFtp
+var connectToServer = connectToServerFtp
+var getModTime = getModTimeFTP
 
 // getServerListing gets a listing of files and modified times from the FTP
 // server. Returns a map of the file pathName to the modTime.
@@ -32,15 +39,11 @@ func getServerListing(dir string) (map[string]string, error) {
 	return FileToTime, err
 }
 
-var clientList = clientListFtp
-
 // clientListFtp calls the list command on the FTP client. Dependency
 // injection to aid in testing.
 func clientListFtp(client *ftp.ServerConn, dir string) ([]*ftp.Entry, error) {
 	return client.List(dir)
 }
-
-var connectToServer = connectToServerFtp
 
 // connectToServerFtp connects to the FTP server and returns the client
 // connection.
@@ -55,4 +58,29 @@ func connectToServerFtp() (*ftp.ServerConn, error) {
 		return nil, handle("Error in logging in to FTP server.", err)
 	}
 	return client, err
+}
+
+// getModTimeFTP gets the date modified times from the FTP server utilizing a
+// directory listing cache.
+func getModTimeFTP(path string, cache map[string]map[string]string) string {
+	var err error
+	dir := filepath.Dir(path)
+	file := filepath.Base(path)
+	_, present := cache[dir]
+	if !present {
+		// Get listing from server
+		cache[dir], err = getServerListing(dir)
+		if err != nil {
+			errOut("Error in getting listing from FTP server.", err)
+		}
+	} else {
+		_, present = cache[dir][file]
+		if !present {
+			err = errors.New("")
+			errOut("Error in getting FTP listing. Expected to find file in cached "+
+				"listing.", err)
+			return ""
+		}
+	}
+	return cache[dir][file]
 }
