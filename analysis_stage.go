@@ -1,16 +1,19 @@
 package main
 
 import (
-	"log"
-	"sort"
-	"gopkg.in/fatih/set.v0"
-	"github.com/jlaffaye/ftp"
-	"time"
 	"fmt"
-	"os"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/jlaffaye/ftp"
+	"gopkg.in/fatih/set.v0"
+	"log"
+	"os"
+	"sort"
+	"strings"
+	"time"
 )
+
+var getChanges = getChangesSync
 
 // dryRunStage identifies changes in the files and sorts them into new,
 // modified, and deleted files.
@@ -38,8 +41,6 @@ func dryRunStage(ctx *context) (syncResult, error) {
 	log.Printf("Deleted on remote: %s", r.deleted)
 	return r, nil
 }
-
-var getChanges = getChangesSync
 
 // getChangesSync runs a dry sync of main files from the source to local disk
 // and parses the itemized changes.
@@ -124,7 +125,7 @@ func getPreviousState(ctx *context, folder syncFolder) (map[string]fInfo,
 		if size == 0 {
 			continue
 		}
-		modTime, err = getDbModTime(ctx, name)
+		modTime, err = dbGetModTime(ctx, name)
 		if err != nil {
 			errOut("Error in getting db modTime", err)
 			modTime = ""
@@ -170,4 +171,55 @@ func getCurrentState(folderSet *set.Set, toInspect *set.Set) (map[string]fInfo,
 		}
 	}
 	return res, err
+}
+
+// combineNames combines the file names from pastState and newState
+// representations. Used to return an overall list of files to compare as
+// new, modified, or deleted.
+func combineNames(pastState map[string]fInfo,
+	newState map[string]fInfo) []string {
+	combined := set.New()
+	for k := range pastState {
+		combined.Add(k)
+	}
+	for k := range newState {
+		combined.Add(k)
+	}
+	res := []string{}
+	for _, v := range combined.List() {
+		res = append(res, v.(string))
+	}
+	sort.Strings(res)
+	return res
+}
+
+// fileChangeLogic goes through a list of file names and decides if they are
+// new on remote, modified, deleted, or unchanged. Uses the pastState and
+// newState representations. Returns changes in a syncResult.
+func fileChangeLogic(pastState map[string]fInfo, newState map[string]fInfo,
+	names []string) syncResult {
+	var n, m, d []string // New, modified, deleted
+	for _, f := range names {
+		past, inPast := pastState[f]
+		cur, inCurrent := newState[f]
+		if !inPast && inCurrent {
+			// If not inPast and inCurrent, file is new on remote.
+			n = append(n, f)
+		} else if inPast && !inCurrent {
+			// If inPast and not inCurrent, file is deleted on remote.
+			d = append(d, f)
+		} else {
+			// If file size has changed, it was modified.
+			if past.size != cur.size {
+				m = append(m, f)
+			} else {
+				// Count md5 files as modified if their modTime has changed.
+				if strings.Contains(f, ".md5") &&
+					past.modTime != cur.modTime {
+					m = append(m, f)
+				}
+			}
+		}
+	}
+	return syncResult{n, m, d}
 }

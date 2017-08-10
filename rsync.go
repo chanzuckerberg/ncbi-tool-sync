@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"path/filepath"
-	"os"
 	"gopkg.in/fatih/set.v0"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 )
 

@@ -18,6 +18,6 @@ func TestSetupDatabase(t *testing.T) {
 func TestCreateTable(t *testing.T) {
 	mock, ctx := testSetup(t)
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(testResult)
-	CreateTable(ctx)
+	dbCreateTable(ctx)
 	assert.Nil(t, mock.ExpectationsWereMet())
 }

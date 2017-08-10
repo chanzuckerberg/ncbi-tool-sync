@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/jlaffaye/ftp"
-	"time"
-	"path/filepath"
 	"errors"
+	"github.com/jlaffaye/ftp"
+	"path/filepath"
+	"time"
 )
 
 // Variable assignments for testing

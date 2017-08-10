@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"log"
 	"strings"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 var fileSizeOnS3 = fileSizeOnS3Svc
@@ -95,6 +95,40 @@ func deleteObject(ctx *context, file string) error {
 	awsOutput(output.GoString())
 	if err != nil {
 		return handle("Error in deleting object.", err)
+	}
+	return err
+}
+
+// moveObject moves the to-be-archived file on S3 to the archive folder under
+// a new file key.
+func moveObject(ctx *context, file string, key string) error {
+	// Move to archive folder
+	svc := ctx.svcS3
+	// Ex: bucket/remote/blast/db/README
+	log.Print("Copy from: " + ctx.bucket + file)
+	log.Print("Copy-to key: " + "archive/" + key)
+
+	// Get file size
+	size, err := fileSizeOnS3(ctx, file, svc)
+	if err != nil {
+		return handle("Error in getting file size on S3.", err)
+	}
+
+	if size < 4500000000 {
+		// Handle via S3 SDK
+		err = copyOnS3(ctx, file, key, svc)
+		if err != nil {
+			errOut("Error in copying file on S3.", err)
+		}
+	} else {
+		log.Print("Large file handling...")
+		// Handle via S3 command line tool
+		template := "aws s3 mv s3://%s%s s3://%s/archive/%s"
+		cmd := fmt.Sprintf(template, ctx.bucket, file, ctx.bucket, key)
+		_, _, err = commandVerbose(cmd)
+		if err != nil {
+			errOut("Error in moving file on S3 via CLI.", err)
+		}
 	}
 	return err
 }
