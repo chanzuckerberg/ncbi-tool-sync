@@ -16,8 +16,8 @@ type context struct {
 	server      string       `yaml:"server"`
 	bucket      string       `yaml:"bucket"`
 	syncFolders []syncFolder `yaml:"syncFolders"`
-	local       string // Set as /syncmount
-	temp        string // Set as /syncmount/synctemp
+	local       string       // Set as /syncmount
+	temp        string       // Set as /syncmount/synctemp
 	svcS3       *s3.S3
 }
 
