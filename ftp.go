@@ -9,7 +9,6 @@ import (
 
 // Variable assignments for testing
 var clientList = clientListFtp
-var connectToServer = connectToServerFtp
 var getModTime = getModTimeFTP
 
 // getServerListing gets a listing of files and modified times from the FTP
@@ -45,9 +44,9 @@ func clientListFtp(client *ftp.ServerConn, dir string) ([]*ftp.Entry, error) {
 	return client.List(dir)
 }
 
-// connectToServerFtp connects to the FTP server and returns the client
+// connectToServer connects to the FTP server and returns the client
 // connection.
-func connectToServerFtp() (*ftp.ServerConn, error) {
+func connectToServer() (*ftp.ServerConn, error) {
 	addr := "ftp.ncbi.nih.gov:21"
 	client, err := ftp.Dial(addr)
 	if err != nil {

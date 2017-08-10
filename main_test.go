@@ -18,13 +18,6 @@ func TestMainCall(t *testing.T) {
 	callSyncFlow = callSyncFlowRepeat
 }
 
-func FakeSetupDatabase(ctx *context) (string, error) {
-	db, mock, _ := sqlmock.New()
-	mock.ExpectClose()
-	ctx.db = db
-	return "", nil
-}
-
 func FakeCallSyncFlow(ctx *context, repeat bool) error {
 	return nil
 }
