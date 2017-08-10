@@ -8,12 +8,12 @@ import (
 	"os"
 )
 
-var setupDatabase = setupDatabaseWithCtx
-var lastVersionNum = lastVersionNumDb
+var setupDatabase = dbSetupWithCtx
+var lastVersionNum = dbLastVersionNum
 
-// setupDatabaseWithCtx sets up the database from environment variables and
+// dbSetupWithCtx sets up the database from environment variables and
 // checks connection conditions.
-func setupDatabaseWithCtx(ctx *context) (string, error) {
+func dbSetupWithCtx(ctx *context) (string, error) {
 	var err error
 	// Setup RDS db from env variables
 	rdsHostname := os.Getenv("RDS_HOSTNAME")
@@ -31,13 +31,13 @@ func setupDatabaseWithCtx(ctx *context) (string, error) {
 	if err = ctx.db.Ping(); err != nil {
 		return sourceName, handle("Failed to ping database", err)
 	}
-	CreateTable(ctx)
+	dbCreateTable(ctx)
 	log.Print("Successfully checked database.")
 	return sourceName, err
 }
 
-// CreateTable creates the table and schema in the db if not present.
-func CreateTable(ctx *context) {
+// dbCreateTable creates the table and schema in the db if not present.
+func dbCreateTable(ctx *context) {
 	query := "CREATE TABLE IF NOT EXISTS entries (" +
 		"PathName VARCHAR(500) NOT NULL, " +
 		"VersionNum INT NOT NULL, " +
@@ -50,9 +50,9 @@ func CreateTable(ctx *context) {
 	}
 }
 
-// moveOldFileDb updates the old db entry with a new archive blob for
+// dbArchiveFile updates the old db entry with a new archive blob for
 // reference.
-func moveOldFileDb(ctx *context, key string, file string, num int) error {
+func dbArchiveFile(ctx *context, file string, key string, num int) error {
 	query := fmt.Sprintf(
 		"update entries set ArchiveKey='%s' where "+
 			"PathName='%s' and VersionNum=%d;", key, file, num)
@@ -65,37 +65,9 @@ func moveOldFileDb(ctx *context, key string, file string, num int) error {
 	return err
 }
 
-// dbUpdateStage adds new file versions to the database.
-func dbUpdateStage(ctx *context, toSync syncResult) error {
-	log.Print("Beginning db update stage.")
-	var err error
-
-	// Add new or modified files as db entries
-	if err = dbNewVersions(ctx, toSync.newF); err != nil {
-		return handle("Error in adding new files to db.", err)
-	}
-	if err = dbNewVersions(ctx, toSync.modified); err != nil {
-		return handle("Error in adding new versions of modified files to db.", err)
-	}
-	return err
-}
-
-// dbNewVersions handles a list of files with new versions.
-func dbNewVersions(ctx *context, files []string) error {
-	// Cache is a map of directory names to a map of file names to mod
-	// times.
-	cache := make(map[string]map[string]string)
-	for _, file := range files {
-		if err := dbNewVersion(ctx, file, cache); err != nil {
-			errOut("Error in adding new version to db", err)
-		}
-	}
-	return nil
-}
-
-// getDbModTime gets the modified time for the latest file version recorded in
+// dbGetModTime gets the modified time for the latest file version recorded in
 // the database.
-func getDbModTime(ctx *context, file string) (string, error) {
+func dbGetModTime(ctx *context, file string) (string, error) {
 	var res string
 	err := ctx.db.QueryRow("select DateModified from entries "+
 		"where PathName=? and DateModified is not null order by VersionNum desc",
@@ -140,13 +112,13 @@ func dbNewVersion(ctx *context, pathName string,
 			"VersionNum) values(?, ?)", pathName, versionNum)
 	}
 	if err != nil {
-		return handle("Error in new version query.", err)
+		return handle("Error in new version insertion query", err)
 	}
 	return err
 }
 
-// lastVersionNumDb finds the latest version number of the file in the db.
-func lastVersionNumDb(ctx *context, file string, inclArchive bool) int {
+// dbLastVersionNum finds the latest version number of the file in the db.
+func dbLastVersionNum(ctx *context, file string, inclArchive bool) int {
 	num := -1
 	var err error
 	var rows *sql.Rows

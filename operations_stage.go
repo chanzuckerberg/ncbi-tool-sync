@@ -1,12 +1,8 @@
 package main
 
 import (
-	"log"
-	"fmt"
 	"errors"
-	"strings"
-	"gopkg.in/fatih/set.v0"
-	"sort"
+	"log"
 )
 
 // fileOperationStage executes the actual file operations on local disk and S3.
@@ -25,6 +21,7 @@ func fileOperationStage(ctx *context, res syncResult) {
 // remote server and uploads to S3.
 func newFilesOperations(ctx *context, newF []string) {
 	var err error
+	cache := make(map[string]map[string]string)
 	for _, file := range newF {
 		if err = copyFileFromRemote(ctx, file); err != nil {
 			errOut("Error in copying new file from remote.", err)
@@ -32,6 +29,10 @@ func newFilesOperations(ctx *context, newF []string) {
 		}
 		if err = putObject(ctx, ctx.temp+file, file); err != nil {
 			errOut("Error in uploading new file to S3.", err)
+			continue
+		}
+		if err = dbNewVersion(ctx, file, cache); err != nil {
+			errOut("Error in adding new version to db", err)
 		}
 	}
 }
@@ -41,8 +42,21 @@ func newFilesOperations(ctx *context, newF []string) {
 func deletedFilesOperations(ctx *context, newF []string) {
 	var err error
 	for _, file := range newF {
-		if err = moveOldFile(ctx, file); err != nil {
+		num := lastVersionNum(ctx, file, false)
+		if num < 1 {
+			err = errors.New("")
+			errOut("No previous unarchived version found in db", err)
+		}
+		key, err := generateChecksum(file, num)
+		if err != nil {
+			errOut("Error in generating checksum", err)
+		}
+
+		if err = moveObject(ctx, file, key); err != nil {
 			errOut("Error in moving deleted file to archive.", err)
+		}
+		if err = dbArchiveFile(ctx, file, key, num); err != nil {
+			errOut("Error in archiving file in db", err)
 		}
 		if err = deleteObject(ctx, file); err != nil {
 			errOut("Error in deleting file.", err)
@@ -54,30 +68,20 @@ func deletedFilesOperations(ctx *context, newF []string) {
 // files. Copies files from remote, moves old files to archive, deletes
 // current copy, and uploads new copy.
 func modifiedFilesOperations(ctx *context, modified []string) {
-	var err error
+	cache := make(map[string]map[string]string)
 	for _, file := range modified {
-		if err = copyFileFromRemote(ctx, file); err != nil {
-			errOut("Error in copying modified file from remote.", err)
-			continue
-		}
-		if err = moveOldFile(ctx, file); err != nil {
-			errOut("Error in moving modified file to archive.", err)
-		}
-		if err = deleteObject(ctx, file); err != nil {
-			errOut("Error in deleting old modified file copies.", err)
-		}
-		if err = putObject(ctx, ctx.temp+file, file); err != nil {
-			errOut("Error in uploading new version of file to S3.", err)
+		if err := modifiedFileOperations(ctx, file, cache); err != nil {
+			errOut("Error in modified file operations", err)
 		}
 	}
 }
 
-// moveOldFile archives a file by moving it from the current directory to the
-// archive folder under an archiveKey name and recording it in the db.
-func moveOldFile(ctx *context, file string) error {
-	// Setup
+func modifiedFileOperations(ctx *context, file string,
+	cache map[string]map[string]string) error {
 	var err error
-	log.Print("Archiving old version of: " + file)
+	if err = copyFileFromRemote(ctx, file); err != nil {
+		return handle("Error in copying modified file from remote", err)
+	}
 	num := lastVersionNum(ctx, file, false)
 	if num < 1 {
 		err = errors.New("")
@@ -85,98 +89,23 @@ func moveOldFile(ctx *context, file string) error {
 	}
 	key, err := generateChecksum(file, num)
 	if err != nil {
-		return handle("Error in generating checksum.", err)
+		return handle("Error in generating checksum", err)
 	}
-	if err = moveOldFileOperations(ctx, file, key); err != nil {
-		errOut("Error in operation to move old file to archive.", err)
+
+	if err = moveObject(ctx, file, key); err != nil {
+		return handle("Error in moving modified file to archive", err)
 	}
-	if err = moveOldFileDb(ctx, key, file, num); err != nil {
-		errOut("Error in updating db entry for old file.", err)
+	if err = dbArchiveFile(ctx, file, key, num); err != nil {
+		return handle("Error in archiving file in db", err)
+	}
+	if err = deleteObject(ctx, file); err != nil {
+		return handle("Error in deleting old modified file copy", err)
+	}
+	if err = putObject(ctx, ctx.temp+file, file); err != nil {
+		return handle("Error in uploading new version of file to S3", err)
+	}
+	if err = dbNewVersion(ctx, file, cache); err != nil {
+		errOut("Error in adding new version to db", err)
 	}
 	return err
-}
-
-// moveOldFileOperations moves the to-be-archived file on S3 to the archive
-// folder under a new file key.
-func moveOldFileOperations(ctx *context, file string, key string) error {
-	// Move to archive folder
-	svc := ctx.svcS3
-	// Ex: bucket/remote/blast/db/README
-	log.Print("Copy from: " + ctx.bucket + file)
-	log.Print("Copy-to key: " + "archive/" + key)
-
-	// Get file size
-	size, err := fileSizeOnS3(ctx, file, svc)
-	if err != nil {
-		return handle("Error in getting file size on S3.", err)
-	}
-
-	if size < 4500000000 {
-		// Handle via S3 SDK
-		err = copyOnS3(ctx, file, key, svc)
-		if err != nil {
-			errOut("Error in copying file on S3.", err)
-		}
-	} else {
-		log.Print("Large file handling...")
-		// Handle via S3 command line tool
-		template := "aws s3 mv s3://%s%s s3://%s/archive/%s"
-		cmd := fmt.Sprintf(template, ctx.bucket, file, ctx.bucket, key)
-		_, _, err = commandVerbose(cmd)
-		if err != nil {
-			errOut("Error in moving file on S3 via CLI.", err)
-		}
-	}
-	return err
-}
-
-// combineNames combines the file names from pastState and newState
-// representations. Used to return an overall list of files to compare as
-// new, modified, or deleted.
-func combineNames(pastState map[string]fInfo,
-	newState map[string]fInfo) []string {
-	combined := set.New()
-	for k := range pastState {
-		combined.Add(k)
-	}
-	for k := range newState {
-		combined.Add(k)
-	}
-	res := []string{}
-	for _, v := range combined.List() {
-		res = append(res, v.(string))
-	}
-	sort.Strings(res)
-	return res
-}
-
-// fileChangeLogic goes through a list of file names and decides if they are
-// new on remote, modified, deleted, or unchanged. Uses the pastState and
-// newState representations. Returns changes in a syncResult.
-func fileChangeLogic(pastState map[string]fInfo, newState map[string]fInfo,
-	names []string) syncResult {
-	var n, m, d []string // New, modified, deleted
-	for _, f := range names {
-		past, inPast := pastState[f]
-		cur, inCurrent := newState[f]
-		if !inPast && inCurrent {
-			// If not inPast and inCurrent, file is new on remote.
-			n = append(n, f)
-		} else if inPast && !inCurrent {
-			// If inPast and not inCurrent, file is deleted on remote.
-			d = append(d, f)
-		} else {
-			// If file size has changed, it was modified.
-			if past.size != cur.size {
-				m = append(m, f)
-			} else {
-				// Count md5 files as modified if their modTime has changed.
-				if strings.Contains(f, ".md5") &&
-					past.modTime != cur.modTime {
-					m = append(m, f)
-				}
-			}
-		}
-	}
-	return syncResult{n, m, d}
 }

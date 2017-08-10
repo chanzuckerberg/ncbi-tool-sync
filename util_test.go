@@ -18,9 +18,9 @@ func TestHandle(t *testing.T) {
 func TestMoveOldFileDb(t *testing.T) {
 	mock, ctx := testSetup(t)
 	result := sqlmock.NewResult(0, 0)
-	mock.ExpectExec("update entries").WithArgs("apple", "banana", 2).WillReturnResult(result)
+	mock.ExpectExec("update entries").WithArgs("banana", "apple", 2).WillReturnResult(result)
 
-	err := moveOldFileDb(ctx, "apple", "banana", 2)
+	err := dbArchiveFile(ctx, "apple", "banana", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,11 +58,11 @@ func TestCommandWithOutputFunc(t *testing.T) {
 func TestLastVersionNumDb(t *testing.T) {
 	mock, ctx := testSetup(t)
 	mock.ExpectQuery("select VersionNum from entries").WithArgs("strawberry").WillReturnRows(testRows)
-	res := lastVersionNumDb(ctx, "strawberry", false)
+	res := dbLastVersionNum(ctx, "strawberry", false)
 	assert.Equal(t, -1, res)
 
 	mock.ExpectQuery("select VersionNum from entries").WithArgs("strawberry").WillReturnRows(testRows)
-	res = lastVersionNumDb(ctx, "strawberry", true)
+	res = dbLastVersionNum(ctx, "strawberry", true)
 	assert.Equal(t, -1, res)
 
 	assert.Nil(t, mock.ExpectationsWereMet())

@@ -36,11 +36,11 @@ func TestMoveOldFileOperations(t *testing.T) {
 	defer func() { fileSizeOnS3 = tmp }()
 	commandWithOutput = FakeRsync
 
-	err := moveOldFileOperations(ctx, "apple", "banana")
+	err := moveObject(ctx, "apple", "12345")
 	assert.Nil(t, err)
 
 	commandWithOutput = FakeCmdWithError
-	err = moveOldFileOperations(ctx, "apple", "banana")
+	err = moveObject(ctx, "apple", "12345")
 	assert.NotNil(t, err)
 	commandWithOutput = commandWithOutputFunc
 }
@@ -57,7 +57,7 @@ func TestMoveOldFileOperationsLarge(t *testing.T) {
 	_, ctx := testSetup(t)
 	expectResponse(testServer, 2)
 
-	err := moveOldFileOperations(ctx, "apple", "banana")
+	err := moveObject(ctx, "apple", "12345")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,27 +97,37 @@ func TestFileOperationStage(t *testing.T) {
 	tmp2 := lastVersionNum
 	lastVersionNum = FakeLastVersionNum
 	defer func() { lastVersionNum = tmp2 }()
+	tmp3 := getModTime
+	getModTime = FakeGetModTime
+	defer func() { getModTime = tmp3 }()
+
 	expectResponse(testServer, 10)
 	res := syncResult{}
-	res.newF = []string{"apricot", "avocado", "bilberry"}
+	res.newF = []string{"avocado", "apricot", "bilberry"}
 	res.modified = []string{"currant", "coconut"}
 	res.deleted = []string{"durian", "grape"}
 	expectResponse(testServer, 4)
 	for _, v := range append(res.newF, res.modified...) {
 		ctx.os.Create(v)
 	}
+	for _, v := range res.newF {
+		expectInsert(m, v)
+	}
 	expectSet(m, "b072f43c1e66bb2e13e5115df39b7db0", "currant")
+	expectInsert(m, "currant")
 	expectSet(m, "f80d7121c31e219bfa56268befb11c43", "coconut")
+	expectInsert(m, "coconut")
 	expectSet(m, "83b00e161b904636d64826336c95ba9f", "durian")
 	expectSet(m, "eb2d7c30e19f867b987928086b7a6e56", "grape")
-	for _, v := range append(res.modified, res.deleted...) {
-		m.ExpectQuery("select VersionNum from entries").WithArgs(v).WillReturnRows(testRows)
-	}
 
 	// Call
 	fileOperationStage(ctx, res)
 	testServer.WaitRequest()
 	m.ExpectationsWereMet()
+}
+
+func expectInsert(mock sqlmock.Sqlmock, name string) {
+	mock.ExpectExec("insert into entries").WithArgs(name, 3, "2017-08-02T22:20:26").WillReturnResult(testResult)
 }
 
 func expectSet(mock sqlmock.Sqlmock, blob string, name string) {
@@ -153,21 +163,6 @@ func TestDryRunStage(t *testing.T) {
 
 func FakeLastVersionNum(ctx *context, file string, inclArchive bool) int {
 	return 2
-}
-
-func TestMoveOldFile(t *testing.T) {
-	// Setup
-	mock, ctx := testSetup(t)
-	tmp := lastVersionNum
-	lastVersionNum = FakeLastVersionNum
-	defer func() { lastVersionNum = tmp }()
-	expectResponse(testServer, 2)
-	mock.ExpectExec("update entries").WithArgs("c979e64a41a4789aaaa5c7ee819c45d5", "apples", 2).WillReturnResult(testResult)
-
-	// Call
-	err := moveOldFile(ctx, "apples")
-	assert.Nil(t, err)
-	assert.Nil(t, mock.ExpectationsWereMet())
 }
 
 func TestDryRunStageWithFake(t *testing.T) {
@@ -213,14 +208,15 @@ func TestCallSyncFlow(t *testing.T) {
 	tmp3 := lastVersionNum
 	lastVersionNum = FakeLastVersionNum
 	defer func() { lastVersionNum = tmp3 }()
+
 	expectResponse(testServer, 8)
 	for _, v := range []string{"lemon", "lime"} {
 		ctx.os.Create(v)
 	}
-	mock.ExpectExec("update entries").WithArgs("03dbc4e3e7436484db322c0efaffe23d", "lime", 2).WillReturnResult(testResult)
-	mock.ExpectExec("update entries").WithArgs("705c18ec390c3520692680d24d6f8d78", "mango", 2).WillReturnResult(testResult)
 	mock.ExpectExec("insert into entries").WithArgs("lemon", 3).WillReturnResult(testResult)
+	mock.ExpectExec("update entries").WithArgs("03dbc4e3e7436484db322c0efaffe23d", "lime", 2).WillReturnResult(testResult)
 	mock.ExpectExec("insert into entries").WithArgs("lime", 3).WillReturnResult(testResult)
+	mock.ExpectExec("update entries").WithArgs("705c18ec390c3520692680d24d6f8d78", "mango", 2).WillReturnResult(testResult)
 
 	// Call
 	callSyncFlow(ctx, false)

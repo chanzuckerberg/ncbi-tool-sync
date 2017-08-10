@@ -14,7 +14,7 @@ func TestMainCall(t *testing.T) {
 	callSyncFlow = FakeCallSyncFlow
 	main()
 
-	setupDatabase = setupDatabaseWithCtx
+	setupDatabase = dbSetupWithCtx
 	callSyncFlow = callSyncFlowRepeat
 }
 

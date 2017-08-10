@@ -40,11 +40,6 @@ func callSyncFlowRepeat(ctx *context, repeat bool) error {
 	// File operation stage. Moving actual files around.
 	fileOperationStage(ctx, toSync)
 
-	// db operation stage. Process changes in the db entries.
-	if err = dbUpdateStage(ctx, toSync); err != nil {
-		return handle("Error in processing db changes.", err)
-	}
-
 	log.Print("Finished processing changes.")
 	log.Print("End of sync flow...")
 	return err
