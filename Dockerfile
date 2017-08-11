@@ -6,7 +6,7 @@ RUN apt-get update
 RUN apt-get -y install rsync python-pip
 RUN go get ./...
 RUN go build
-RUN pip install --upgrade --user awscli
+RUN pip install awscli
 RUN mkdir /syncmount
 VOLUME /syncmount
 EXPOSE 80
