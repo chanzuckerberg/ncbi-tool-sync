@@ -64,9 +64,7 @@ func deletedFilesOperations(ctx *context, newF []string) {
 	}
 }
 
-// modifiedFilesOperations executes a single file at-a-time flow for modified
-// files. Copies files from remote, moves old files to archive, deletes
-// current copy, and uploads new copy.
+// modifiedFilesOperations calls the operations loop for modified files.
 func modifiedFilesOperations(ctx *context, modified []string) {
 	cache := make(map[string]map[string]string)
 	for _, file := range modified {
@@ -76,6 +74,9 @@ func modifiedFilesOperations(ctx *context, modified []string) {
 	}
 }
 
+// modifiedFileOperations executes a single file at-a-time flow for modified
+// files. Copies files from remote, moves old files to archive, deletes
+// current copy, uploads new copy, and updates db state.
 func modifiedFileOperations(ctx *context, file string,
 	cache map[string]map[string]string) error {
 	var err error
