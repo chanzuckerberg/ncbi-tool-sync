@@ -1,14 +1,16 @@
-server: rsync://ftp.ncbi.nih.gov
+server: ftp.ncbi.nih.gov
 bucket: czbiohub-ncbi-store
 
 syncFolders:
-  - name: /blast/db
+  - name: /blast/db/FASTA
     flags:
-      - exclude '.*'
-      - exclude 'cloud/*'
-      - exclude 'nr.??.tar.gz'
-      - exclude 'nt.??.tar.gz'
-      - exclude 'other_genomic.gz'
+      - include '*/'
+      - include 'n?.gz'
+      - exclude '*'
   - name: /pub/taxonomy
     flags:
       - exclude '.*'
+      - include '*/'
+      - include 'accession2taxid/*'
+      - include 'taxdump.tar.gz'
+      - exclude '*'

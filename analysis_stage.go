@@ -38,7 +38,7 @@ func dryRunStage(ctx *context) (syncResult, error) {
 	log.Print("Done with dry run...\nParsing changes...")
 	log.Printf("New on remote: %s", r.newF)
 	log.Printf("Modified on remote: %s", r.modified)
-	log.Printf("Deleted on remote: %s", r.deleted)
+	//log.Printf("Deleted on remote: %s", r.deleted)
 	return r, nil
 }
 
@@ -78,7 +78,7 @@ func getFilteredSet(ctx *context, folder syncFolder) (*set.Set, *set.Set,
 	for _, flag := range folder.flags {
 		template += " --" + flag
 	}
-	source := ctx.server + folder.sourcePath + "/"
+	source := "rsync://" + ctx.server + folder.sourcePath + "/"
 	tmp := ctx.local + "/synctmp"
 	cmd := fmt.Sprintf("%s %s %s", template, source, tmp)
 	if err := ctx.os.MkdirAll(tmp, os.ModePerm); err != nil {

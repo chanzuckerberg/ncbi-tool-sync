@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/afero"
 	"io/ioutil"
 	"log"
-	"menteslibres.net/gosexy/to"
+	"github.com/gosexy/to"
 	"os"
 	"os/user"
 )

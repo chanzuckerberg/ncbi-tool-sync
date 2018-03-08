@@ -9,8 +9,7 @@ import (
 	"strings"
 )
 
-// copyFileFromRemote copies one file from remote server to local disk folder
-// with a simple rsync call.
+// copyFileFromRemote copies one file from remote server to local disk folder.
 func copyFileFromRemote(ctx *context, file string) error {
 	source := fmt.Sprintf("%s%s", ctx.server, file)
 	// Ex: $HOME/temp/blast/db
@@ -21,10 +20,11 @@ func copyFileFromRemote(ctx *context, file string) error {
 	}
 	// Ex: $HOME/temp/blast/db/README
 	dest := fmt.Sprintf("%s%s", ctx.temp, file)
-	template := "rsync -arzv --inplace --size-only --no-motd --progress " +
-		"--copy-links %s %s"
-	cmd := fmt.Sprintf(template, source, dest)
-	_, _, err = commandVerboseOnErr(cmd)
+	//template := "rsync -arzv --inplace --size-only --no-motd --progress " +
+	//	"--copy-links %s %s"
+	template := "wget -S -nv -O %s %s"
+	cmd := fmt.Sprintf(template, dest, source)
+	_, _, err = commandVerbose(cmd)
 	if err != nil {
 		return handle("Couldn't rsync file to local disk.", err)
 	}

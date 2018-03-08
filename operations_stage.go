@@ -13,8 +13,8 @@ func fileOperationStage(ctx *context, res syncResult) {
 	newFilesOperations(ctx, res.newF)
 	log.Print("Going to handle modified file operations...")
 	modifiedFilesOperations(ctx, res.modified)
-	log.Print("Going to handle deleted file operations...")
-	deletedFilesOperations(ctx, res.deleted)
+	//log.Print("Going to handle deleted file operations...")
+	//deletedFilesOperations(ctx, res.deleted)
 }
 
 // newFilesOperations executes operations for new files. Copies files from

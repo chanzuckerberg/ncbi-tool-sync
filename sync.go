@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/jasonlvhit/gocron"
 	"log"
+	"time"
 )
 
 var callSyncFlow = callSyncFlowRepeat
@@ -26,7 +27,7 @@ func callSyncFlowRepeat(ctx *context, repeat bool) error {
 		if !repeat {
 			return
 		}
-		gocron.Every(24).Hours().Do(callSyncFlowRepeat, ctx, true)
+		gocron.Every(12).Hours().Do(callSyncFlowRepeat, ctx, true)
 		log.Print("Next run has been scheduled...")
 		<-gocron.Start()
 	}()
@@ -34,6 +35,12 @@ func callSyncFlowRepeat(ctx *context, repeat bool) error {
 	// Dry run analysis stage for identifying file changes.
 	toSync, err := dryRunStage(ctx)
 	if err != nil {
+		// If listing from NCBI fails, wait some time and try again. Gocron
+		// scheduling will still be in effect.
+		defer func() {
+			time.Sleep(5 * time.Minute)
+			callSyncFlowRepeat(ctx, false)
+		}()
 		return handle("Error in dry run stage.", err)
 	}
 
