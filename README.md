@@ -2,3 +2,7 @@
 
 * Quip doc:
   - https://czi.quip.com/oAvXAja5PIjO
+
+## Archived
+
+This repository was created for experimental purposes and is no longer maintained or used.
